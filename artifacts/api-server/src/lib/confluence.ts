@@ -13,22 +13,15 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 2): P
   for (let attempt = 0; attempt <= retries; attempt++) {
     const res = await fetch(url, options);
     if (res.ok) return res;
-    if (res.status === 429) {
-      const retryAfter = parseInt(res.headers.get("retry-after") || "", 10);
+    if (attempt < retries && (res.status === 429 || res.status >= 500)) {
+      const retryAfter = res.status === 429 ? parseInt(res.headers.get("retry-after") || "", 10) : 0;
       const delay = (retryAfter > 0 ? retryAfter : Math.pow(2, attempt)) * 1000;
-      logger.warn({ status: 429, attempt, url }, `Rate limited, retrying after ${delay}ms`);
-      await new Promise((r) => setTimeout(r, delay));
-      continue;
-    }
-    if (res.status >= 500 && attempt < retries) {
-      const delay = 1000 * Math.pow(2, attempt);
-      logger.warn({ status: res.status, attempt, url }, `Server error, retrying after ${delay}ms`);
+      logger.warn({ status: res.status, attempt, url }, `Retrying after ${delay}ms`);
       await new Promise((r) => setTimeout(r, delay));
       continue;
     }
     return res;
   }
-  // Final attempt — just return whatever we get
   return fetch(url, options);
 }
 

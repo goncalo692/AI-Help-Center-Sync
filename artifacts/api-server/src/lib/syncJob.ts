@@ -236,17 +236,22 @@ async function removeOrphanedDocuments(
   currentDocIds: string[],
   counters: { processed: number; errored: number; errors: string[] },
 ): Promise<void> {
-  if (currentDocIds.length === 0) return;
-
-  const orphaned = await db
-    .select()
-    .from(syncStateTable)
-    .where(
-      and(
-        eq(syncStateTable.folderMappingId, mappingId),
-        notInArray(syncStateTable.confluenceDocumentId, currentDocIds),
-      ),
-    );
+  // When currentDocIds is empty, all docs for this mapping are orphaned.
+  // When non-empty, find docs not in the current set.
+  const orphaned = currentDocIds.length === 0
+    ? await db
+        .select()
+        .from(syncStateTable)
+        .where(eq(syncStateTable.folderMappingId, mappingId))
+    : await db
+        .select()
+        .from(syncStateTable)
+        .where(
+          and(
+            eq(syncStateTable.folderMappingId, mappingId),
+            notInArray(syncStateTable.confluenceDocumentId, currentDocIds),
+          ),
+        );
 
   for (const doc of orphaned) {
     try {

@@ -161,9 +161,11 @@ export async function createExternalSource(
 
   logger.info({ url, name }, "Creating Talkdesk external source");
 
+  const truncatedName = name.slice(0, 64);
+  const description = `Confluence sync: ${name}`.slice(0, 160);
   const details: Record<string, string> = {
-    name,
-    description: `Confluence sync: ${name}`,
+    name: truncatedName,
+    description,
     knowledge_type: "CUSTOM",
   };
   if (knowledgeSegments) {
