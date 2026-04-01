@@ -4,7 +4,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import DOMPurify from "dompurify";
 import {
   Activity, Play, CheckCircle2, XCircle, AlertCircle, Clock,
-  Database, FileText, ArrowLeft, Eye, ChevronRight, Workflow, Link2,
+  Database, FileText, ArrowLeft, Eye, ChevronRight, Link2,
 } from "lucide-react";
 
 import {
@@ -28,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SidebarLayout } from "@/components/sidebar-layout";
 import {
   Dialog,
   DialogContent,
@@ -465,30 +466,15 @@ function DocumentPreviewDialog({ documentId, onClose }: { documentId: number; on
 
 export default function SyncPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col items-center">
-      <div className="w-full h-16 border-b bg-card flex items-center px-6 sticky top-0 z-10">
-        <div className="flex items-center gap-2 max-w-6xl mx-auto w-full">
-          <div className="bg-primary/10 p-2 rounded-md">
-            <Workflow className="w-5 h-5 text-primary" />
-          </div>
-          <h1 className="text-lg font-semibold tracking-tight">Talkdesk Knowledge Sync</h1>
-          <div className="ml-auto flex items-center gap-1">
-            <a href={`${import.meta.env.BASE_URL}`}>
-              <Button variant="ghost" size="sm">Settings</Button>
-            </a>
-            <Button variant="ghost" size="sm" className="text-primary font-semibold">Sync</Button>
-          </div>
-        </div>
-      </div>
-
-      <main className="max-w-6xl w-full px-6 py-8 space-y-6 pb-24">
+    <SidebarLayout>
+      <div className="max-w-5xl w-full px-8 py-8 space-y-6 pb-24">
         <SyncOverview />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <KnowledgeBases />
           <SyncLogs />
         </div>
-      </main>
-    </div>
+      </div>
+    </SidebarLayout>
   );
 }
