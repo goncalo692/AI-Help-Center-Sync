@@ -17,31 +17,49 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary Get current settings
  */
+export const getSettingsResponseSyncIntervalMinutesMax = 60;
+
 export const GetSettingsResponse = zod.object({
   id: zod.number(),
   talkdeskAccountName: zod.string(),
   talkdeskRegion: zod.string(),
   confluenceSpaceKey: zod.string(),
-  syncIntervalMinutes: zod.number().min(1).max(60),
+  syncIntervalMinutes: zod
+    .number()
+    .min(1)
+    .max(getSettingsResponseSyncIntervalMinutesMax),
+  hasCredentials: zod.boolean(),
   updatedAt: zod.coerce.date().optional(),
 });
 
 /**
  * @summary Update settings
  */
+export const updateSettingsBodySyncIntervalMinutesMax = 60;
+
 export const UpdateSettingsBody = zod.object({
   talkdeskAccountName: zod.string(),
   talkdeskRegion: zod.string(),
   confluenceSpaceKey: zod.string(),
-  syncIntervalMinutes: zod.number().min(1).max(60),
+  syncIntervalMinutes: zod
+    .number()
+    .min(1)
+    .max(updateSettingsBodySyncIntervalMinutesMax),
+  talkdeskCredentialsJson: zod.string().nullish(),
 });
+
+export const updateSettingsResponseSyncIntervalMinutesMax = 60;
 
 export const UpdateSettingsResponse = zod.object({
   id: zod.number(),
   talkdeskAccountName: zod.string(),
   talkdeskRegion: zod.string(),
   confluenceSpaceKey: zod.string(),
-  syncIntervalMinutes: zod.number().min(1).max(60),
+  syncIntervalMinutes: zod
+    .number()
+    .min(1)
+    .max(updateSettingsResponseSyncIntervalMinutesMax),
+  hasCredentials: zod.boolean(),
   updatedAt: zod.coerce.date().optional(),
 });
 

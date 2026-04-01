@@ -79,15 +79,14 @@ artifacts-monorepo/
 - `CONFLUENCE_BASE_URL` — Confluence instance URL
 - `CONFLUENCE_EMAIL` — Confluence account email
 - `CONFLUENCE_API_TOKEN` — Confluence API token
-- `TALKDESK_CLIENT_ID` — Talkdesk OAuth client ID
-- `TALKDESK_PRIVATE_KEY` — Talkdesk ES256 private key (PEM body)
-- `TALKDESK_KEY_ID` — Talkdesk key identifier
 - `SESSION_SECRET` — Session secret
 - `DATABASE_URL` — PostgreSQL connection string (auto-provisioned)
 
+Note: Talkdesk OAuth credentials (client_id, private_key, key_id) are stored in the database via the Settings UI (JSON upload), not as environment secrets.
+
 ## Database Tables
 
-- `settings` — Single-row config: Talkdesk account name, region, Confluence space key
+- `settings` — Single-row config: Talkdesk account name, region, Confluence space key, Talkdesk OAuth credentials (JSON)
 - `folder_mappings` — Maps Confluence folder IDs to knowledge segment names, tracks external source IDs
 - `sync_state` — Per-document tracking: content hash, last modified, Talkdesk document ID, document title, cached HTML
 - `sync_logs` — Sync run history with counts (processed/skipped/errored)

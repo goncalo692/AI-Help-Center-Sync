@@ -236,6 +236,8 @@ components:
           type: integer
           minimum: 1
           maximum: 60
+        hasCredentials:
+          type: boolean
         updatedAt:
           type: string
           format: date-time
@@ -245,6 +247,7 @@ components:
         - talkdeskRegion
         - confluenceSpaceKey
         - syncIntervalMinutes
+        - hasCredentials
     UpdateSettingsBody:
       type: object
       properties:
@@ -258,6 +261,9 @@ components:
           type: integer
           minimum: 1
           maximum: 60
+        talkdeskCredentialsJson:
+          type: string
+          nullable: true
       required:
         - talkdeskAccountName
         - talkdeskRegion

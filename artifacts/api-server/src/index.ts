@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startSyncScheduler, runSync } from "./lib/syncJob";
+import { loadCredentialsFromDb } from "./lib/credentialsLoader";
 
 const rawPort = process.env["PORT"];
 
@@ -23,9 +24,11 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  startSyncScheduler().then(() => {
-    runSync().catch((err) => {
-      logger.error({ err }, "Initial sync error");
+  loadCredentialsFromDb().then(() => {
+    startSyncScheduler().then(() => {
+      runSync().catch((err) => {
+        logger.error({ err }, "Initial sync error");
+      });
     });
   });
 });

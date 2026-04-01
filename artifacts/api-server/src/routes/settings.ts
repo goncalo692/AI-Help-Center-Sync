@@ -4,6 +4,7 @@ import { settingsTable } from "@workspace/db/schema";
 import { UpdateSettingsBody, GetSettingsResponse, UpdateSettingsResponse } from "@workspace/api-zod";
 import { eq } from "drizzle-orm";
 import { restartSyncScheduler } from "../lib/syncJob";
+import { setTalkdeskCredentials } from "../lib/talkdesk";
 
 const router: IRouter = Router();
 
@@ -18,6 +19,7 @@ router.get("/settings", async (_req, res) => {
         talkdeskRegion: "US",
         confluenceSpaceKey: "",
         syncIntervalMinutes: 5,
+        hasCredentials: false,
         updatedAt: null,
       });
       res.json(response);
@@ -31,6 +33,7 @@ router.get("/settings", async (_req, res) => {
       talkdeskRegion: s.talkdeskRegion,
       confluenceSpaceKey: s.confluenceSpaceKey,
       syncIntervalMinutes: s.syncIntervalMinutes,
+      hasCredentials: !!s.talkdeskCredentials,
       updatedAt: s.updatedAt?.toISOString(),
     });
     res.json(response);
@@ -48,34 +51,48 @@ router.put("/settings", async (req, res) => {
 
     const intervalMinutes = Math.max(1, Math.min(60, body.syncIntervalMinutes));
 
+    const updateValues: Record<string, unknown> = {
+      talkdeskAccountName: body.talkdeskAccountName,
+      talkdeskRegion: body.talkdeskRegion,
+      confluenceSpaceKey: body.confluenceSpaceKey,
+      syncIntervalMinutes: intervalMinutes,
+      updatedAt: new Date(),
+    };
+
+    if (body.talkdeskCredentialsJson !== undefined) {
+      if (body.talkdeskCredentialsJson === null || body.talkdeskCredentialsJson === "") {
+        updateValues.talkdeskCredentials = null;
+        setTalkdeskCredentials(null);
+      } else {
+        const parsed = JSON.parse(body.talkdeskCredentialsJson);
+        if (!parsed.id || !parsed.private_key || !parsed.key_id) {
+          res.status(400).json({ message: "Credentials JSON must contain id, private_key, and key_id fields" });
+          return;
+        }
+        updateValues.talkdeskCredentials = body.talkdeskCredentialsJson;
+        setTalkdeskCredentials({
+          id: parsed.id,
+          private_key: parsed.private_key,
+          key_id: parsed.key_id,
+        });
+      }
+    }
+
     if (settings.length === 0) {
       const [created] = await db
         .insert(settingsTable)
-        .values({
-          talkdeskAccountName: body.talkdeskAccountName,
-          talkdeskRegion: body.talkdeskRegion,
-          confluenceSpaceKey: body.confluenceSpaceKey,
-          syncIntervalMinutes: intervalMinutes,
-          updatedAt: new Date(),
-        })
+        .values(updateValues as any)
         .returning();
       settings = [created];
     } else {
       const [updated] = await db
         .update(settingsTable)
-        .set({
-          talkdeskAccountName: body.talkdeskAccountName,
-          talkdeskRegion: body.talkdeskRegion,
-          confluenceSpaceKey: body.confluenceSpaceKey,
-          syncIntervalMinutes: intervalMinutes,
-          updatedAt: new Date(),
-        })
+        .set(updateValues as any)
         .where(eq(settingsTable.id, settings[0].id))
         .returning();
       settings = [updated];
     }
 
-    // Restart scheduler with new interval
     restartSyncScheduler(intervalMinutes);
 
     const s = settings[0];
@@ -85,6 +102,7 @@ router.put("/settings", async (req, res) => {
       talkdeskRegion: s.talkdeskRegion,
       confluenceSpaceKey: s.confluenceSpaceKey,
       syncIntervalMinutes: s.syncIntervalMinutes,
+      hasCredentials: !!s.talkdeskCredentials,
       updatedAt: s.updatedAt?.toISOString(),
     });
     res.json(response);

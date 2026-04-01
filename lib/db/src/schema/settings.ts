@@ -8,6 +8,7 @@ export const settingsTable = pgTable("settings", {
   talkdeskRegion: text("talkdesk_region").notNull().default("US"),
   confluenceSpaceKey: text("confluence_space_key").notNull().default("AHC"),
   syncIntervalMinutes: integer("sync_interval_minutes").notNull().default(5),
+  talkdeskCredentials: text("talkdesk_credentials"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

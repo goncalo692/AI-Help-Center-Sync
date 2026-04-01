@@ -1,9 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { Save, Info } from "lucide-react";
+import { Save, Info, Upload, CheckCircle2, XCircle, FileKey } from "lucide-react";
 
 import {
   useGetSettings,
@@ -34,6 +34,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 
 const settingsSchema = z.object({
   talkdeskAccountName: z.string().min(1, "Account name is required"),
@@ -44,9 +46,25 @@ const settingsSchema = z.object({
 
 type SettingsValues = z.infer<typeof settingsSchema>;
 
+function validateCredentialsJson(text: string): { valid: boolean; error?: string; clientId?: string } {
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed.id) return { valid: false, error: "Missing 'id' field" };
+    if (!parsed.private_key) return { valid: false, error: "Missing 'private_key' field" };
+    if (!parsed.key_id) return { valid: false, error: "Missing 'key_id' field" };
+    return { valid: true, clientId: parsed.id };
+  } catch {
+    return { valid: false, error: "Invalid JSON format" };
+  }
+}
+
 export function ConnectionSettings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [credentialsJson, setCredentialsJson] = useState<string>("");
+  const [credentialsValidation, setCredentialsValidation] = useState<{ valid: boolean; error?: string; clientId?: string } | null>(null);
+  const [pendingCredentials, setPendingCredentials] = useState<string | null>(null);
 
   const { data: settings, isLoading } = useGetSettings({
     query: {
@@ -66,7 +84,6 @@ export function ConnectionSettings() {
     },
   });
 
-  // Init form when data loads
   const initialized = useRef(false);
   useEffect(() => {
     if (settings && !initialized.current) {
@@ -80,15 +97,53 @@ export function ConnectionSettings() {
     }
   }, [settings, form]);
 
+  const handleCredentialsChange = useCallback((text: string) => {
+    setCredentialsJson(text);
+    if (text.trim() === "") {
+      setCredentialsValidation(null);
+      setPendingCredentials(null);
+    } else {
+      const result = validateCredentialsJson(text);
+      setCredentialsValidation(result);
+      if (result.valid) {
+        setPendingCredentials(text);
+      } else {
+        setPendingCredentials(null);
+      }
+    }
+  }, []);
+
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      handleCredentialsChange(text);
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, [handleCredentialsChange]);
+
   const onSubmit = (data: SettingsValues) => {
+    const payload: any = { ...data };
+    if (pendingCredentials) {
+      payload.talkdeskCredentialsJson = pendingCredentials;
+    }
+
     updateSettings.mutate(
-      { data },
+      { data: payload },
       {
         onSuccess: (updatedData) => {
           queryClient.setQueryData(getGetSettingsQueryKey(), updatedData);
+          setCredentialsJson("");
+          setCredentialsValidation(null);
+          setPendingCredentials(null);
           toast({
             title: "Settings saved",
-            description: "Connection settings have been updated.",
+            description: pendingCredentials
+              ? "Settings and credentials have been updated."
+              : "Connection settings have been updated.",
           });
         },
         onError: () => {
@@ -176,6 +231,76 @@ export function ConnectionSettings() {
                   </FormItem>
                 )}
               />
+
+              <div className="md:col-span-2 space-y-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">Talkdesk API Credentials</label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="w-4 h-4 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-xs">
+                      <p>Upload or paste the OAuth credentials JSON from Talkdesk. It must contain id, private_key, and key_id fields.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  {settings?.hasCredentials && !pendingCredentials && (
+                    <Badge variant="outline" className="gap-1 text-green-600 border-green-200 bg-green-50">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Configured
+                    </Badge>
+                  )}
+                  {pendingCredentials && (
+                    <Badge variant="outline" className="gap-1 text-blue-600 border-blue-200 bg-blue-50">
+                      <FileKey className="w-3 h-3" />
+                      New credentials ready
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload JSON File
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                </div>
+
+                <Textarea
+                  placeholder='Or paste credentials JSON here...'
+                  value={credentialsJson}
+                  onChange={(e) => handleCredentialsChange(e.target.value)}
+                  rows={4}
+                  className="font-mono text-xs"
+                />
+
+                {credentialsValidation && !credentialsValidation.valid && (
+                  <div className="flex items-center gap-2 text-sm text-destructive">
+                    <XCircle className="w-4 h-4" />
+                    {credentialsValidation.error}
+                  </div>
+                )}
+                {credentialsValidation?.valid && (
+                  <div className="flex items-center gap-2 text-sm text-green-600">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Valid credentials (Client ID: {credentialsValidation.clientId?.slice(0, 8)}...)
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground">
+                  Credentials are stored securely in the database. Only the client ID prefix is shown for verification.
+                </p>
+              </div>
 
               <FormField
                 control={form.control}

@@ -1,9 +1,22 @@
 import { createPrivateKey, createSign, randomUUID } from "crypto";
 import { logger } from "./logger";
 
-const TALKDESK_CLIENT_ID = process.env.TALKDESK_CLIENT_ID || "";
-const TALKDESK_PRIVATE_KEY = process.env.TALKDESK_PRIVATE_KEY || "";
-const TALKDESK_KEY_ID = process.env.TALKDESK_KEY_ID || "";
+export interface TalkdeskCredentials {
+  id: string;
+  private_key: string;
+  key_id: string;
+}
+
+let activeCredentials: TalkdeskCredentials | null = null;
+
+export function setTalkdeskCredentials(creds: TalkdeskCredentials | null): void {
+  activeCredentials = creds;
+  cachedToken = null;
+}
+
+export function getTalkdeskCredentials(): TalkdeskCredentials | null {
+  return activeCredentials;
+}
 
 const REGION_TOKEN_URLS: Record<string, string> = {
   US: "https://{account}.talkdeskid.com/oauth/token",
@@ -24,6 +37,8 @@ function base64UrlEncode(buffer: Buffer): string {
 }
 
 function createJwtAssertion(accountName: string, region: string): string {
+  if (!activeCredentials) throw new Error("Talkdesk credentials not configured. Upload credentials JSON in Settings.");
+
   const tokenUrl = REGION_TOKEN_URLS[region]?.replace("{account}", accountName);
   if (!tokenUrl) throw new Error(`Unknown region: ${region}`);
 
@@ -32,13 +47,13 @@ function createJwtAssertion(accountName: string, region: string): string {
   const header = {
     alg: "ES256",
     typ: "JWT",
-    kid: TALKDESK_KEY_ID,
+    kid: activeCredentials.key_id,
   };
 
   const payload = {
     jti: randomUUID(),
-    iss: TALKDESK_CLIENT_ID,
-    sub: TALKDESK_CLIENT_ID,
+    iss: activeCredentials.id,
+    sub: activeCredentials.id,
     aud: tokenUrl,
     iat: now,
     exp: now + 300,
@@ -48,7 +63,7 @@ function createJwtAssertion(accountName: string, region: string): string {
   const payloadB64 = base64UrlEncode(Buffer.from(JSON.stringify(payload)));
   const signingInput = `${headerB64}.${payloadB64}`;
 
-  const pemKey = `-----BEGIN PRIVATE KEY-----\n${TALKDESK_PRIVATE_KEY}\n-----END PRIVATE KEY-----`;
+  const pemKey = `-----BEGIN PRIVATE KEY-----\n${activeCredentials.private_key}\n-----END PRIVATE KEY-----`;
   const privateKey = createPrivateKey(pemKey);
 
   const sign = createSign("SHA256");
