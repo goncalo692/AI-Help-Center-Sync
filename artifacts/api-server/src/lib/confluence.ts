@@ -76,6 +76,27 @@ export interface ConfluenceFolder {
   status: string;
 }
 
+export interface ConfluenceSmartLink {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  embedUrl: string;
+  parentId?: string;
+  parentType?: string;
+  spaceId?: string;
+  version?: { createdAt: string; number: number };
+}
+
+export interface FolderChild {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  spaceId?: string;
+  childPosition?: number;
+}
+
 export async function getSpaceId(spaceKey: string): Promise<string> {
   const data = await confluenceV2Request("/spaces", { keys: spaceKey, limit: "1" });
   const results = data.results || [];
@@ -116,6 +137,33 @@ export async function getFoldersInSpace(spaceKey: string): Promise<ConfluenceFol
   }
 
   return allFolders;
+}
+
+export async function getFolderDirectChildren(folderId: string): Promise<FolderChild[]> {
+  const allChildren: FolderChild[] = [];
+  let cursor: string | undefined;
+
+  while (true) {
+    const params: Record<string, string> = { limit: "50" };
+    if (cursor) params.cursor = cursor;
+
+    const data = await confluenceV2Request(`/folders/${folderId}/direct-children`, params);
+    const results: FolderChild[] = data.results || [];
+    allChildren.push(...results);
+
+    const nextLink = data._links?.next;
+    if (!nextLink) break;
+
+    const nextUrl = new URL(nextLink, CONFLUENCE_BASE_URL);
+    cursor = nextUrl.searchParams.get("cursor") || undefined;
+    if (!cursor) break;
+  }
+
+  return allChildren;
+}
+
+export async function getSmartLinkDetails(embedId: string): Promise<ConfluenceSmartLink> {
+  return confluenceV2Request(`/embeds/${embedId}`);
 }
 
 export async function getChildPages(parentId: string): Promise<ConfluencePage[]> {

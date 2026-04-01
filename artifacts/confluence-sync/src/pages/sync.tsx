@@ -4,7 +4,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import DOMPurify from "dompurify";
 import {
   Activity, Play, CheckCircle2, XCircle, AlertCircle, Clock,
-  Database, FileText, ArrowLeft, Eye, ChevronRight, Workflow,
+  Database, FileText, ArrowLeft, Eye, ChevronRight, Workflow, Link2,
 } from "lucide-react";
 
 import {
@@ -350,31 +350,45 @@ function DocumentList({
             </div>
           ) : (
             <div className="divide-y">
-              {docs.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="px-4 py-3 flex items-center justify-between hover:bg-muted/30 transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{doc.documentTitle || `Document ${doc.confluenceDocumentId}`}</p>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                      <span>ID: {doc.confluenceDocumentId}</span>
-                      {doc.lastSyncedAt && (
-                        <span>synced {formatDistanceToNow(new Date(doc.lastSyncedAt), { addSuffix: true })}</span>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setPreviewDocId(doc.id)}
-                    className="shrink-0 ml-2"
+              {docs.map((doc) => {
+                const isSmartLink = doc.confluenceDocumentId.startsWith("embed-");
+                return (
+                  <div
+                    key={doc.id}
+                    className="px-4 py-3 flex items-center justify-between hover:bg-muted/30 transition-colors"
                   >
-                    <Eye className="w-4 h-4 mr-1" />
-                    Preview
-                  </Button>
-                </div>
-              ))}
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      {isSmartLink ? (
+                        <Link2 className="w-4 h-4 text-blue-500 shrink-0" />
+                      ) : (
+                        <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium truncate">{doc.documentTitle || `Document ${doc.confluenceDocumentId}`}</p>
+                          {isSmartLink && (
+                            <Badge variant="outline" className="text-xs shrink-0 text-blue-600 border-blue-200">Smart Link</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                          {doc.lastSyncedAt && (
+                            <span>synced {formatDistanceToNow(new Date(doc.lastSyncedAt), { addSuffix: true })}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPreviewDocId(doc.id)}
+                      className="shrink-0 ml-2"
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      Preview
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>
