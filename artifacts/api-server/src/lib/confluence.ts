@@ -51,7 +51,8 @@ export async function getTopLevelPages(spaceKey: string): Promise<ConfluencePage
     limit: "200",
     expand: "children.page",
   });
-  return data.results || [];
+  const results: ConfluencePage[] = data.results || [];
+  return results.filter((p) => (p.children?.page?.size || 0) > 0);
 }
 
 export async function getChildPages(parentId: string): Promise<ConfluencePage[]> {
