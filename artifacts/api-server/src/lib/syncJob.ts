@@ -128,6 +128,8 @@ export async function runSync(): Promise<void> {
                   contentHash: hash,
                   confluenceLastModified: lastModified,
                   talkdeskDocumentId: docId,
+                  documentTitle: page.title,
+                  cachedHtml: cleanHtml,
                   lastSyncedAt: new Date(),
                 })
                 .where(eq(syncStateTable.id, existingState[0].id));
@@ -138,6 +140,8 @@ export async function runSync(): Promise<void> {
                 contentHash: hash,
                 confluenceLastModified: lastModified,
                 talkdeskDocumentId: docId,
+                documentTitle: page.title,
+                cachedHtml: cleanHtml,
               });
             }
 

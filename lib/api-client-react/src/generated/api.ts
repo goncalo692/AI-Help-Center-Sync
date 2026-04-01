@@ -19,12 +19,15 @@ import type {
 import type {
   ConfluenceFolder,
   CreateFolderMappingBody,
+  DocumentPreview,
   FolderMapping,
   HealthStatus,
   MessageResponse,
   Settings,
   SyncLog,
+  SyncSource,
   SyncStatus,
+  SyncedDocument,
   UpdateSettingsBody,
 } from "./api.schemas";
 
@@ -739,6 +742,259 @@ export function useGetSyncLogs<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetSyncLogsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List all knowledge base sources with document counts
+ */
+export const getListSyncSourcesUrl = () => {
+  return `/api/sync/sources`;
+};
+
+export const listSyncSources = async (
+  options?: RequestInit,
+): Promise<SyncSource[]> => {
+  return customFetch<SyncSource[]>(getListSyncSourcesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSyncSourcesQueryKey = () => {
+  return [`/api/sync/sources`] as const;
+};
+
+export const getListSyncSourcesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSyncSources>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSyncSources>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSyncSourcesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSyncSources>>> = ({
+    signal,
+  }) => listSyncSources({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSyncSources>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSyncSourcesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSyncSources>>
+>;
+export type ListSyncSourcesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all knowledge base sources with document counts
+ */
+
+export function useListSyncSources<
+  TData = Awaited<ReturnType<typeof listSyncSources>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listSyncSources>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSyncSourcesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List documents synced for a specific source
+ */
+export const getListSourceDocumentsUrl = (mappingId: number) => {
+  return `/api/sync/sources/${mappingId}/documents`;
+};
+
+export const listSourceDocuments = async (
+  mappingId: number,
+  options?: RequestInit,
+): Promise<SyncedDocument[]> => {
+  return customFetch<SyncedDocument[]>(getListSourceDocumentsUrl(mappingId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSourceDocumentsQueryKey = (mappingId: number) => {
+  return [`/api/sync/sources/${mappingId}/documents`] as const;
+};
+
+export const getListSourceDocumentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSourceDocuments>>,
+  TError = ErrorType<unknown>,
+>(
+  mappingId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSourceDocuments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListSourceDocumentsQueryKey(mappingId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listSourceDocuments>>
+  > = ({ signal }) =>
+    listSourceDocuments(mappingId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!mappingId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSourceDocuments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSourceDocumentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSourceDocuments>>
+>;
+export type ListSourceDocumentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List documents synced for a specific source
+ */
+
+export function useListSourceDocuments<
+  TData = Awaited<ReturnType<typeof listSourceDocuments>>,
+  TError = ErrorType<unknown>,
+>(
+  mappingId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSourceDocuments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSourceDocumentsQueryOptions(mappingId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get HTML preview for a synced document
+ */
+export const getGetDocumentPreviewUrl = (documentId: number) => {
+  return `/api/sync/documents/${documentId}/preview`;
+};
+
+export const getDocumentPreview = async (
+  documentId: number,
+  options?: RequestInit,
+): Promise<DocumentPreview> => {
+  return customFetch<DocumentPreview>(getGetDocumentPreviewUrl(documentId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDocumentPreviewQueryKey = (documentId: number) => {
+  return [`/api/sync/documents/${documentId}/preview`] as const;
+};
+
+export const getGetDocumentPreviewQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDocumentPreview>>,
+  TError = ErrorType<unknown>,
+>(
+  documentId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDocumentPreview>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDocumentPreviewQueryKey(documentId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDocumentPreview>>
+  > = ({ signal }) =>
+    getDocumentPreview(documentId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!documentId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDocumentPreview>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDocumentPreviewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDocumentPreview>>
+>;
+export type GetDocumentPreviewQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get HTML preview for a synced document
+ */
+
+export function useGetDocumentPreview<
+  TData = Awaited<ReturnType<typeof getDocumentPreview>>,
+  TError = ErrorType<unknown>,
+>(
+  documentId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDocumentPreview>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDocumentPreviewQueryOptions(documentId, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

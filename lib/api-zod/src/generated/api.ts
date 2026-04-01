@@ -112,6 +112,53 @@ export const GetSyncLogsResponseItem = zod.object({
 export const GetSyncLogsResponse = zod.array(GetSyncLogsResponseItem);
 
 /**
+ * @summary List all knowledge base sources with document counts
+ */
+export const ListSyncSourcesResponseItem = zod.object({
+  mappingId: zod.number(),
+  confluenceFolderName: zod.string(),
+  knowledgeSegmentName: zod.string(),
+  externalSourceId: zod.string().nullish(),
+  documentCount: zod.number(),
+  lastSyncedAt: zod.coerce.date().nullish(),
+});
+export const ListSyncSourcesResponse = zod.array(ListSyncSourcesResponseItem);
+
+/**
+ * @summary List documents synced for a specific source
+ */
+export const ListSourceDocumentsParams = zod.object({
+  mappingId: zod.coerce.number(),
+});
+
+export const ListSourceDocumentsResponseItem = zod.object({
+  id: zod.number(),
+  confluenceDocumentId: zod.string(),
+  documentTitle: zod.string().nullish(),
+  talkdeskDocumentId: zod.string().nullish(),
+  contentHash: zod.string(),
+  lastSyncedAt: zod.coerce.date().nullish(),
+});
+export const ListSourceDocumentsResponse = zod.array(
+  ListSourceDocumentsResponseItem,
+);
+
+/**
+ * @summary Get HTML preview for a synced document
+ */
+export const GetDocumentPreviewParams = zod.object({
+  documentId: zod.coerce.number(),
+});
+
+export const GetDocumentPreviewResponse = zod.object({
+  id: zod.number(),
+  documentTitle: zod.string().nullish(),
+  html: zod.string(),
+  confluenceDocumentId: zod.string(),
+  lastSyncedAt: zod.coerce.date().nullish(),
+});
+
+/**
  * @summary List top-level pages (folders) in the configured Confluence space
  */
 export const GetConfluenceFoldersResponseItem = zod.object({
