@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { GetConfluenceFoldersResponse } from "@workspace/api-zod";
-import { getTopLevelPages } from "../lib/confluence";
+import { getFoldersInSpace } from "../lib/confluence";
 
 const router: IRouter = Router();
 
@@ -11,13 +11,13 @@ router.get("/confluence/folders", async (req, res) => {
     const settings = await db.select().from(settingsTable).limit(1);
     const spaceKey = settings.length > 0 ? settings[0].confluenceSpaceKey : "AHC";
 
-    const pages = await getTopLevelPages(spaceKey);
+    const folders = await getFoldersInSpace(spaceKey);
 
     const response = GetConfluenceFoldersResponse.parse(
-      pages.map((p) => ({
-        id: p.id,
-        title: p.title,
-        hasChildren: (p.children?.page?.size || 0) > 0,
+      folders.map((f) => ({
+        id: f.id,
+        title: f.title,
+        hasChildren: true,
       })),
     );
     res.json(response);

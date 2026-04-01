@@ -8,7 +8,7 @@ function getAuthHeader(): string {
   return "Basic " + Buffer.from(`${CONFLUENCE_EMAIL}:${CONFLUENCE_API_TOKEN}`).toString("base64");
 }
 
-async function confluenceRequest(path: string, params?: Record<string, string>): Promise<any> {
+async function confluenceV1Request(path: string, params?: Record<string, string>): Promise<any> {
   const url = new URL(`${CONFLUENCE_BASE_URL}/wiki/rest/api${path}`);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
@@ -25,7 +25,31 @@ async function confluenceRequest(path: string, params?: Record<string, string>):
 
   if (!res.ok) {
     const text = await res.text();
-    logger.error({ status: res.status, body: text, path }, "Confluence API error");
+    logger.error({ status: res.status, body: text, path }, "Confluence API v1 error");
+    throw new Error(`Confluence API error: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+async function confluenceV2Request(path: string, params?: Record<string, string>): Promise<any> {
+  const url = new URL(`${CONFLUENCE_BASE_URL}/wiki/api/v2${path}`);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.set(k, v);
+    }
+  }
+
+  const res = await fetch(url.toString(), {
+    headers: {
+      Authorization: getAuthHeader(),
+      Accept: "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    logger.error({ status: res.status, body: text, path }, "Confluence API v2 error");
     throw new Error(`Confluence API error: ${res.status} ${text}`);
   }
 
@@ -43,25 +67,48 @@ export interface ConfluencePage {
   body?: { storage: { value: string } };
 }
 
-export async function getTopLevelPages(spaceKey: string): Promise<ConfluencePage[]> {
-  const allFolders: ConfluencePage[] = [];
+export interface ConfluenceFolder {
+  id: string;
+  title: string;
+  spaceId: string;
+  parentId?: string;
+  parentType?: string;
+  status: string;
+}
+
+export async function getSpaceId(spaceKey: string): Promise<string> {
+  const data = await confluenceV2Request("/spaces", { keys: spaceKey, limit: "1" });
+  const results = data.results || [];
+  if (results.length === 0) {
+    throw new Error(`Space with key "${spaceKey}" not found`);
+  }
+  return results[0].id;
+}
+
+export async function getFoldersInSpace(spaceKey: string): Promise<ConfluenceFolder[]> {
+  const cql = `type=folder AND space.key="${spaceKey}"`;
+  const allFolders: ConfluenceFolder[] = [];
   let start = 0;
   const limit = 100;
 
   while (true) {
-    const data = await confluenceRequest("/content", {
-      spaceKey,
-      type: "page",
+    const data = await confluenceV1Request("/search", {
+      cql,
       limit: String(limit),
       start: String(start),
-      expand: "children.page",
     });
 
-    const results: ConfluencePage[] = data.results || [];
-    for (const page of results) {
-      if ((page.children?.page?.size || 0) > 0) {
-        allFolders.push(page);
-      }
+    const results = data.results || [];
+    for (const item of results) {
+      const content = item.content || item;
+      allFolders.push({
+        id: content.id,
+        title: content.title,
+        spaceId: content.space?.id || "",
+        parentId: content.parentId,
+        parentType: content.parentType,
+        status: content.status || "current",
+      });
     }
 
     if (results.length < limit) break;
@@ -77,7 +124,7 @@ export async function getChildPages(parentId: string): Promise<ConfluencePage[]>
   const limit = 100;
 
   while (true) {
-    const data = await confluenceRequest(`/content/${parentId}/child/page`, {
+    const data = await confluenceV1Request(`/content/${parentId}/child/page`, {
       start: String(start),
       limit: String(limit),
       expand: "version",
@@ -94,7 +141,7 @@ export async function getChildPages(parentId: string): Promise<ConfluencePage[]>
 }
 
 export async function getPageContent(pageId: string): Promise<ConfluencePage> {
-  return confluenceRequest(`/content/${pageId}`, {
+  return confluenceV1Request(`/content/${pageId}`, {
     expand: "body.storage,version",
   });
 }
