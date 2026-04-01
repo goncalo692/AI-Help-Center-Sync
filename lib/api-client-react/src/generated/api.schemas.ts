@@ -43,6 +43,8 @@ export interface SyncStatus {
   isRunning: boolean;
   lastRunAt?: string | null;
   lastRunStatus?: string | null;
+  lastRunErrored: number;
+  lastRunErrorMessage?: string | null;
   totalMappings: number;
   totalDocumentsTracked: number;
 }

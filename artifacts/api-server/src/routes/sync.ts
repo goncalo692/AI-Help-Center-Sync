@@ -24,6 +24,8 @@ router.get("/sync/status", async (_req, res) => {
       isRunning: getIsSyncing(),
       lastRunAt: lastLog.length > 0 ? lastLog[0].startedAt?.toISOString() : null,
       lastRunStatus: lastLog.length > 0 ? lastLog[0].status : null,
+      lastRunErrored: lastLog.length > 0 ? (lastLog[0].documentsErrored || 0) : 0,
+      lastRunErrorMessage: lastLog.length > 0 ? (lastLog[0].errorMessage || null) : null,
       totalMappings: mappings.length,
       totalDocumentsTracked: Number(docCount[0]?.count || 0),
     });

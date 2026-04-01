@@ -35,10 +35,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-function StatusIcon({ status }: { status: string }) {
+function StatusIcon({ status, hasErrors }: { status: string; hasErrors?: boolean }) {
   switch (status.toLowerCase()) {
     case "success":
     case "completed":
+      if (hasErrors) return <AlertCircle className="w-4 h-4 text-amber-500" />;
       return <CheckCircle2 className="w-4 h-4 text-green-500" />;
     case "failed":
     case "error":
@@ -49,6 +50,16 @@ function StatusIcon({ status }: { status: string }) {
     default:
       return <AlertCircle className="w-4 h-4 text-amber-500" />;
   }
+}
+
+function StatusLabel({ status, hasErrors }: { status: string; hasErrors?: boolean }) {
+  if ((status === "completed" || status === "success") && hasErrors) {
+    return <span className="text-amber-600">Completed with errors</span>;
+  }
+  if (status === "error" || status === "failed") {
+    return <span className="text-red-500 capitalize">{status}</span>;
+  }
+  return <span className="capitalize">{status}</span>;
 }
 
 function SyncOverview() {
@@ -100,6 +111,27 @@ function SyncOverview() {
             Sync Now
           </Button>
         </div>
+
+        {(status?.lastRunStatus === "error" || status?.lastRunStatus === "failed" || (status?.lastRunErrored ?? 0) > 0) && (
+          <div className="mb-6 p-3 rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50">
+            <div className="flex items-start gap-2">
+              <XCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-red-700 dark:text-red-400">
+                  {status?.lastRunStatus === "error" || status?.lastRunStatus === "failed"
+                    ? "Last sync failed"
+                    : `Last sync completed with ${status?.lastRunErrored} error${(status?.lastRunErrored ?? 0) !== 1 ? "s" : ""}`
+                  }
+                </p>
+                {status?.lastRunErrorMessage && (
+                  <p className="text-xs text-red-600 dark:text-red-400/80 mt-1 break-words">
+                    {status.lastRunErrorMessage}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-6">
           <div className="space-y-1">
@@ -158,39 +190,42 @@ function SyncLogs() {
             <div className="text-center p-8 text-sm text-muted-foreground">No sync history available.</div>
           ) : (
             <div className="divide-y">
-              {logs.map((log) => (
-                <div key={log.id} className="px-4 py-3 text-sm">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2 font-medium">
-                      <StatusIcon status={log.status} />
-                      <span className="capitalize">{log.status}</span>
+              {logs.map((log) => {
+                const hasErrors = log.documentsErrored > 0;
+                return (
+                  <div key={log.id} className={`px-4 py-3 text-sm ${hasErrors || log.status === "error" ? "border-l-2 border-l-red-400" : ""}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2 font-medium">
+                        <StatusIcon status={log.status} hasErrors={hasErrors} />
+                        <StatusLabel status={log.status} hasErrors={hasErrors} />
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(log.startedAt), "MMM d, HH:mm")}
+                      </span>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {format(new Date(log.startedAt), "MMM d, HH:mm")}
-                    </span>
-                  </div>
-                  <div className="flex gap-4 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> {log.documentsProcessed} processed
-                    </span>
-                    {log.documentsSkipped > 0 && (
+                    <div className="flex gap-4 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" /> {log.documentsSkipped} skipped
+                        <CheckCircle2 className="w-3 h-3" /> {log.documentsProcessed} processed
                       </span>
-                    )}
-                    {log.documentsErrored > 0 && (
-                      <span className="flex items-center gap-1 text-red-500">
-                        <XCircle className="w-3 h-3" /> {log.documentsErrored} errors
-                      </span>
+                      {log.documentsSkipped > 0 && (
+                        <span className="flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {log.documentsSkipped} skipped
+                        </span>
+                      )}
+                      {log.documentsErrored > 0 && (
+                        <span className="flex items-center gap-1 text-red-500">
+                          <XCircle className="w-3 h-3" /> {log.documentsErrored} error{log.documentsErrored !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                    {log.errorMessage && (
+                      <p className="text-xs text-red-500 bg-red-50 dark:bg-red-950/20 p-2 rounded mt-2 break-words">
+                        {log.errorMessage}
+                      </p>
                     )}
                   </div>
-                  {log.errorMessage && (
-                    <p className="text-xs text-red-500 bg-red-50 dark:bg-red-950/20 p-2 rounded mt-2 break-words">
-                      {log.errorMessage}
-                    </p>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </ScrollArea>

@@ -85,6 +85,8 @@ export const GetSyncStatusResponse = zod.object({
   isRunning: zod.boolean(),
   lastRunAt: zod.coerce.date().nullish(),
   lastRunStatus: zod.string().nullish(),
+  lastRunErrored: zod.number(),
+  lastRunErrorMessage: zod.string().nullish(),
   totalMappings: zod.number(),
   totalDocumentsTracked: zod.number(),
 });
