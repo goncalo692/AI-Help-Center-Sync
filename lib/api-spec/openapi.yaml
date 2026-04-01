@@ -303,12 +303,18 @@ components:
         lastRunStatus:
           type: string
           nullable: true
+        lastRunErrored:
+          type: integer
+        lastRunErrorMessage:
+          type: string
+          nullable: true
         totalMappings:
           type: integer
         totalDocumentsTracked:
           type: integer
       required:
         - isRunning
+        - lastRunErrored
         - totalMappings
         - totalDocumentsTracked
     SyncLog:
