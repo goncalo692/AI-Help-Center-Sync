@@ -229,6 +229,59 @@ export function buildPageUrl(page: ConfluencePageV2): string {
   return `${CONFLUENCE_BASE_URL}/wiki/pages/${page.id}`;
 }
 
+export function extractConfluencePageId(url: string): string | null {
+  const patterns = [
+    /\/wiki\/spaces\/[^/]+\/pages\/(\d+)/,
+    /\/wiki\/pages\/(\d+)/,
+    /pageId=(\d+)/,
+  ];
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+export interface ConfluenceAttachment {
+  id: string;
+  title: string;
+  mediaType: string;
+  fileSize: number;
+  downloadUrl: string;
+}
+
+export async function getPageAttachments(pageId: string): Promise<ConfluenceAttachment[]> {
+  const data = await confluenceV1Request(`/content/${pageId}/child/attachment`, { limit: "100" });
+  const results = data.results || [];
+  return results.map((att: any) => ({
+    id: att.id,
+    title: att.title,
+    mediaType: att.metadata?.mediaType || att.extensions?.mediaType || "application/octet-stream",
+    fileSize: att.extensions?.fileSize || 0,
+    downloadUrl: att._links?.download || "",
+  }));
+}
+
+export async function downloadAttachment(downloadPath: string): Promise<Buffer> {
+  const url = `${CONFLUENCE_BASE_URL}/wiki${downloadPath}`;
+  const res = await fetchWithRetry(url, {
+    headers: {
+      Authorization: getAuthHeader(),
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to download attachment: ${res.status}`);
+  }
+
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+export function stripConfluenceMacros(html: string): string {
+  return html.replace(/<ac:structured-macro[\s\S]*?<\/ac:structured-macro>/gi, "");
+}
+
 export function stripImages(html: string): string {
   return html
     .replace(/<picture[^>]*>[\s\S]*?<\/picture>/gi, "")

@@ -6,11 +6,17 @@ import {
   getPageContent,
   getPageVersion,
   getSmartLinkDetails,
+  getPageAttachments,
+  downloadAttachment,
   buildPageUrl,
+  extractConfluencePageId,
   stripImages,
+  stripConfluenceMacros,
   getContentHash,
 } from "./confluence";
 import { createExternalSource, upsertDocument, deleteDocument } from "./talkdesk";
+import { extractGoogleDriveFileId, getGoogleDriveFileContent } from "./googleDrive";
+import { isSupportedAttachment, convertToHtml } from "./documentConverter";
 import { logger } from "./logger";
 
 const CONCURRENCY = 5;
@@ -33,6 +39,42 @@ function escapeHtml(str: string): string {
 
 function buildSmartLinkHtml(title: string, embedUrl: string): string {
   return `<h2>${escapeHtml(title)}</h2><p><a href="${escapeHtml(embedUrl)}">${escapeHtml(embedUrl)}</a></p>`;
+}
+
+async function resolveSmartLinkContent(embedUrl: string, title: string): Promise<{ html: string; resolvedTitle: string }> {
+  const driveFileId = extractGoogleDriveFileId(embedUrl);
+  if (driveFileId) {
+    try {
+      logger.info({ embedUrl, driveFileId }, "Resolving Google Drive smart link");
+      const driveContent = await getGoogleDriveFileContent(driveFileId);
+      return {
+        html: driveContent.html,
+        resolvedTitle: driveContent.title || title,
+      };
+    } catch (err) {
+      logger.warn({ err, embedUrl, driveFileId }, "Failed to resolve Google Drive content, falling back to URL");
+      return { html: buildSmartLinkHtml(title, embedUrl), resolvedTitle: title };
+    }
+  }
+
+  const confluencePageId = extractConfluencePageId(embedUrl);
+  if (confluencePageId) {
+    try {
+      logger.info({ embedUrl, confluencePageId }, "Resolving Confluence page smart link");
+      const page = await getPageContent(confluencePageId);
+      const rawHtml = page.body?.storage?.value || "";
+      const cleanHtml = stripConfluenceMacros(stripImages(rawHtml));
+      return {
+        html: cleanHtml,
+        resolvedTitle: page.title || title,
+      };
+    } catch (err) {
+      logger.warn({ err, embedUrl, confluencePageId }, "Failed to resolve Confluence page content, falling back to URL");
+      return { html: buildSmartLinkHtml(title, embedUrl), resolvedTitle: title };
+    }
+  }
+
+  return { html: buildSmartLinkHtml(title, embedUrl), resolvedTitle: title };
 }
 
 async function runInBatches<T>(
@@ -85,7 +127,7 @@ async function syncPageItem(
     // Full v2 call with body content
     const fullPage = await getPageContent(pageId);
     const rawHtml = fullPage.body?.storage?.value || "";
-    const cleanHtml = stripImages(rawHtml);
+    const cleanHtml = stripConfluenceMacros(stripImages(rawHtml));
     const hash = getContentHash(cleanHtml);
 
     if (existingState.length > 0 && existingState[0].contentHash === hash) {
@@ -154,7 +196,6 @@ async function syncSmartLinkItem(
       return;
     }
 
-    // Skip non-current embeds
     if (embed.status !== "current") {
       logger.info({ embedId, status: embed.status }, "Skipping non-current embed");
       counters.skipped++;
@@ -163,6 +204,7 @@ async function syncSmartLinkItem(
 
     const lastModified = embed.version?.createdAt || "";
     const confluenceDocId = `embed-${embedId}`;
+    const isExternalLink = !!extractGoogleDriveFileId(embed.embedUrl);
 
     const existingState = await db
       .select()
@@ -171,6 +213,7 @@ async function syncSmartLinkItem(
       .limit(1);
 
     if (
+      !isExternalLink &&
       lastModified &&
       existingState.length > 0 &&
       existingState[0].confluenceLastModified === lastModified
@@ -179,7 +222,8 @@ async function syncSmartLinkItem(
       return;
     }
 
-    const html = buildSmartLinkHtml(embed.title || embed.embedUrl, embed.embedUrl);
+    const resolved = await resolveSmartLinkContent(embed.embedUrl, embed.title || `Smart Link: ${embed.embedUrl}`);
+    const html = resolved.html;
     const hash = getContentHash(html);
 
     if (existingState.length > 0 && existingState[0].contentHash === hash) {
@@ -193,7 +237,7 @@ async function syncSmartLinkItem(
 
     const isNew = existingState.length === 0;
     const docId = `confluence-embed-${embedId}`;
-    const title = embed.title || `Smart Link: ${embed.embedUrl}`;
+    const title = resolved.resolvedTitle;
     await upsertDocument(accountName, region, sourceId, docId, title, html, embed.embedUrl, isNew);
 
     if (!isNew) {

@@ -28,6 +28,8 @@ artifacts-monorepo/
 │   │       │   ├── confluence.ts  # Confluence REST API client
 │   │       │   ├── talkdesk.ts    # Talkdesk KM API client (JWT auth)
 │   │       │   ├── syncJob.ts     # Background sync job (5-min interval)
+│   │       │   ├── googleDrive.ts # Google Drive content fetcher (via Replit Connectors)
+│   │       │   ├── documentConverter.ts # PDF/DOCX to HTML conversion
 │   │       │   └── logger.ts      # Pino logger
 │   │       └── routes/
 │   │           ├── settings.ts        # GET/PUT /api/settings
@@ -62,7 +64,13 @@ artifacts-monorepo/
 - **Confluence Integration**: Uses REST API v1/v2 with Basic Auth (email + API token) to fetch space folders, page content, and smart links (embeds). Uses v2 `GET /folders/{id}/direct-children` to discover all child types, then fetches details per type.
 - **Talkdesk Integration**: Uses JWT-based auth (ES256 signed assertions) to authenticate with Talkdesk OAuth, then manages external sources and documents via the Knowledge Management API
 - **Change Detection**: Stores content hashes and last-modified timestamps per document; only re-syncs when content actually changes
+- **Smart Link Content Resolution**: When syncing smart links/embeds, resolves the actual content:
+  - **Google Drive files** (Docs, Sheets, Slides): Exports as HTML via Google Drive API through Replit Connectors SDK
+  - **Google Drive PDFs/DOCX**: Downloads and converts to HTML using pdf-parse and mammoth
+  - **Confluence page links**: Fetches the page body and strips macros/images
+  - **Other URLs**: Falls back to a simple HTML link
 - **Image Stripping**: Removes all `<img>` tags from HTML before sending to Talkdesk
+- **Confluence Macro Stripping**: Removes `ac:structured-macro` XML noise from HTML
 - **HTML Preview**: Cached HTML stored in sync_state; rendered with DOMPurify sanitization (allowlist-based)
 - **Background Sync**: Runs every 5 minutes via setInterval, with manual trigger option
 
