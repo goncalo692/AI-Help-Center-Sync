@@ -44,15 +44,31 @@ export interface ConfluencePage {
 }
 
 export async function getTopLevelPages(spaceKey: string): Promise<ConfluencePage[]> {
-  const data = await confluenceRequest("/content", {
-    spaceKey,
-    type: "page",
-    depth: "root",
-    limit: "200",
-    expand: "children.page",
-  });
-  const results: ConfluencePage[] = data.results || [];
-  return results.filter((p) => (p.children?.page?.size || 0) > 0);
+  const allFolders: ConfluencePage[] = [];
+  let start = 0;
+  const limit = 100;
+
+  while (true) {
+    const data = await confluenceRequest("/content", {
+      spaceKey,
+      type: "page",
+      limit: String(limit),
+      start: String(start),
+      expand: "children.page",
+    });
+
+    const results: ConfluencePage[] = data.results || [];
+    for (const page of results) {
+      if ((page.children?.page?.size || 0) > 0) {
+        allFolders.push(page);
+      }
+    }
+
+    if (results.length < limit) break;
+    start += limit;
+  }
+
+  return allFolders;
 }
 
 export async function getChildPages(parentId: string): Promise<ConfluencePage[]> {
