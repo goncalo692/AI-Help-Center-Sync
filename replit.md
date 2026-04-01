@@ -59,7 +59,7 @@ artifacts-monorepo/
 
 ## Key Features
 
-- **Confluence Integration**: Uses REST API v1/v2 with Basic Auth (email + API token) to fetch space folders and page content
+- **Confluence Integration**: Uses REST API v1/v2 with Basic Auth (email + API token) to fetch space folders, page content, and smart links (embeds). Uses v2 `GET /folders/{id}/direct-children` to discover all child types, then fetches details per type.
 - **Talkdesk Integration**: Uses JWT-based auth (ES256 signed assertions) to authenticate with Talkdesk OAuth, then manages external sources and documents via the Knowledge Management API
 - **Change Detection**: Stores content hashes and last-modified timestamps per document; only re-syncs when content actually changes
 - **Image Stripping**: Removes all `<img>` tags from HTML before sending to Talkdesk

@@ -1,7 +1,13 @@
 import { db } from "@workspace/db";
 import { settingsTable, folderMappingsTable, syncStateTable, syncLogsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { getChildPages, getPageContent, stripImages, getContentHash } from "./confluence";
+import {
+  getFolderDirectChildren,
+  getPageContent,
+  getSmartLinkDetails,
+  stripImages,
+  getContentHash,
+} from "./confluence";
 import { createExternalSource, upsertDocument } from "./talkdesk";
 import { logger } from "./logger";
 
@@ -9,6 +15,156 @@ let isSyncing = false;
 
 export function getIsSyncing(): boolean {
   return isSyncing;
+}
+
+function buildSmartLinkHtml(title: string, embedUrl: string): string {
+  return `<h2>${escapeHtml(title)}</h2><p><a href="${escapeHtml(embedUrl)}">${escapeHtml(embedUrl)}</a></p>`;
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function syncPageItem(
+  pageId: string,
+  mappingId: number,
+  sourceId: string,
+  accountName: string,
+  region: string,
+): Promise<"processed" | "skipped"> {
+  const existingState = await db
+    .select()
+    .from(syncStateTable)
+    .where(eq(syncStateTable.confluenceDocumentId, pageId))
+    .limit(1);
+
+  const fullPage = await getPageContent(pageId);
+  const lastModified = fullPage.version?.when || "";
+
+  if (
+    lastModified &&
+    existingState.length > 0 &&
+    existingState[0].confluenceLastModified === lastModified
+  ) {
+    return "skipped";
+  }
+
+  const rawHtml = fullPage.body?.storage?.value || "";
+  const cleanHtml = stripImages(rawHtml);
+  const hash = getContentHash(cleanHtml);
+
+  if (existingState.length > 0 && existingState[0].contentHash === hash) {
+    await db
+      .update(syncStateTable)
+      .set({ confluenceLastModified: lastModified, lastSyncedAt: new Date() })
+      .where(eq(syncStateTable.id, existingState[0].id));
+    return "skipped";
+  }
+
+  const docId = `confluence-${pageId}`;
+  await upsertDocument(accountName, region, sourceId, docId, fullPage.title, cleanHtml);
+
+  if (existingState.length > 0) {
+    await db
+      .update(syncStateTable)
+      .set({
+        contentHash: hash,
+        confluenceLastModified: lastModified,
+        talkdeskDocumentId: docId,
+        documentTitle: fullPage.title,
+        cachedHtml: cleanHtml,
+        lastSyncedAt: new Date(),
+      })
+      .where(eq(syncStateTable.id, existingState[0].id));
+  } else {
+    await db.insert(syncStateTable).values({
+      confluenceDocumentId: pageId,
+      folderMappingId: mappingId,
+      contentHash: hash,
+      confluenceLastModified: lastModified,
+      talkdeskDocumentId: docId,
+      documentTitle: fullPage.title,
+      cachedHtml: cleanHtml,
+    });
+  }
+
+  return "processed";
+}
+
+async function syncSmartLinkItem(
+  embedId: string,
+  mappingId: number,
+  sourceId: string,
+  accountName: string,
+  region: string,
+): Promise<"processed" | "skipped"> {
+  const embed = await getSmartLinkDetails(embedId);
+
+  if (!embed.embedUrl) {
+    logger.warn({ embedId }, "Smart link has no embedUrl, skipping");
+    return "skipped";
+  }
+
+  const lastModified = embed.version?.createdAt || "";
+
+  const existingState = await db
+    .select()
+    .from(syncStateTable)
+    .where(eq(syncStateTable.confluenceDocumentId, `embed-${embedId}`))
+    .limit(1);
+
+  if (
+    lastModified &&
+    existingState.length > 0 &&
+    existingState[0].confluenceLastModified === lastModified
+  ) {
+    return "skipped";
+  }
+
+  const html = buildSmartLinkHtml(embed.title || embed.embedUrl, embed.embedUrl);
+  const hash = getContentHash(html);
+
+  if (existingState.length > 0 && existingState[0].contentHash === hash) {
+    await db
+      .update(syncStateTable)
+      .set({ confluenceLastModified: lastModified, lastSyncedAt: new Date() })
+      .where(eq(syncStateTable.id, existingState[0].id));
+    return "skipped";
+  }
+
+  const docId = `confluence-embed-${embedId}`;
+  const title = embed.title || `Smart Link: ${embed.embedUrl}`;
+  await upsertDocument(accountName, region, sourceId, docId, title, html);
+
+  if (existingState.length > 0) {
+    await db
+      .update(syncStateTable)
+      .set({
+        contentHash: hash,
+        confluenceLastModified: lastModified,
+        talkdeskDocumentId: docId,
+        documentTitle: title,
+        cachedHtml: html,
+        lastSyncedAt: new Date(),
+      })
+      .where(eq(syncStateTable.id, existingState[0].id));
+  } else {
+    await db.insert(syncStateTable).values({
+      confluenceDocumentId: `embed-${embedId}`,
+      folderMappingId: mappingId,
+      contentHash: hash,
+      confluenceLastModified: lastModified,
+      talkdeskDocumentId: docId,
+      documentTitle: title,
+      cachedHtml: html,
+    });
+  }
+
+  return "processed";
 }
 
 export async function runSync(): Promise<void> {
@@ -76,78 +232,45 @@ export async function runSync(): Promise<void> {
             .where(eq(folderMappingsTable.id, mapping.id));
         }
 
-        const childPages = await getChildPages(mapping.confluenceFolderId);
-        logger.info({ folderId: mapping.confluenceFolderId, pageCount: childPages.length }, "Found child pages");
+        const children = await getFolderDirectChildren(mapping.confluenceFolderId);
+        const pages = children.filter((c) => c.type === "page");
+        const embeds = children.filter((c) => c.type === "embed");
+        const otherCount = children.length - pages.length - embeds.length;
+        logger.info(
+          { folderId: mapping.confluenceFolderId, pages: pages.length, embeds: embeds.length, skippedOther: otherCount },
+          "Found folder children",
+        );
 
-        for (const page of childPages) {
+        for (const child of pages) {
           try {
-            const existingState = await db
-              .select()
-              .from(syncStateTable)
-              .where(eq(syncStateTable.confluenceDocumentId, page.id))
-              .limit(1);
-
-            const lastModified = page.version?.when || "";
-
-            if (
-              existingState.length > 0 &&
-              existingState[0].confluenceLastModified === lastModified
-            ) {
-              skipped++;
-              continue;
-            }
-
-            const fullPage = await getPageContent(page.id);
-            const rawHtml = fullPage.body?.storage?.value || "";
-            const cleanHtml = stripImages(rawHtml);
-            const hash = getContentHash(cleanHtml);
-
-            if (existingState.length > 0 && existingState[0].contentHash === hash) {
-              await db
-                .update(syncStateTable)
-                .set({ confluenceLastModified: lastModified, lastSyncedAt: new Date() })
-                .where(eq(syncStateTable.id, existingState[0].id));
-              skipped++;
-              continue;
-            }
-
-            const docId = `confluence-${page.id}`;
-            await upsertDocument(
+            const result = await syncPageItem(
+              child.id,
+              mapping.id,
+              sourceId,
               config.talkdeskAccountName,
               config.talkdeskRegion,
-              sourceId,
-              docId,
-              page.title,
-              cleanHtml,
             );
-
-            if (existingState.length > 0) {
-              await db
-                .update(syncStateTable)
-                .set({
-                  contentHash: hash,
-                  confluenceLastModified: lastModified,
-                  talkdeskDocumentId: docId,
-                  documentTitle: page.title,
-                  cachedHtml: cleanHtml,
-                  lastSyncedAt: new Date(),
-                })
-                .where(eq(syncStateTable.id, existingState[0].id));
-            } else {
-              await db.insert(syncStateTable).values({
-                confluenceDocumentId: page.id,
-                folderMappingId: mapping.id,
-                contentHash: hash,
-                confluenceLastModified: lastModified,
-                talkdeskDocumentId: docId,
-                documentTitle: page.title,
-                cachedHtml: cleanHtml,
-              });
-            }
-
-            processed++;
+            if (result === "processed") processed++;
+            else skipped++;
           } catch (pageErr) {
-            logger.error({ err: pageErr, pageId: page.id }, "Error processing page");
+            logger.error({ err: pageErr, pageId: child.id }, "Error processing page");
+            errored++;
+          }
+        }
+
+        for (const child of embeds) {
+          try {
+            const result = await syncSmartLinkItem(
+              child.id,
+              mapping.id,
+              sourceId,
+              config.talkdeskAccountName,
+              config.talkdeskRegion,
+            );
+            if (result === "processed") processed++;
+            else skipped++;
+          } catch (embedErr) {
+            logger.error({ err: embedErr, embedId: child.id }, "Error processing smart link");
             errored++;
           }
         }
