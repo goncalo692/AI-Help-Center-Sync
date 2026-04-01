@@ -1,22 +1,28 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Confluence to Talkdesk Knowledge Management sync API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: settings
+    description: App settings
+  - name: folder-mappings
+    description: Confluence folder to knowledge segment mappings
+  - name: sync
+    description: Sync operations
+  - name: confluence
+    description: Confluence API proxy
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +30,136 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get current settings
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+    put:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingsBody"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+  /folder-mappings:
+    get:
+      operationId: listFolderMappings
+      tags: [folder-mappings]
+      summary: List all folder mappings
+      responses:
+        "200":
+          description: List of folder mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FolderMapping"
+    post:
+      operationId: createFolderMapping
+      tags: [folder-mappings]
+      summary: Create a folder mapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFolderMappingBody"
+      responses:
+        "201":
+          description: Created folder mapping
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolderMapping"
+  /folder-mappings/{id}:
+    delete:
+      operationId: deleteFolderMapping
+      tags: [folder-mappings]
+      summary: Delete a folder mapping
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /sync/status:
+    get:
+      operationId: getSyncStatus
+      tags: [sync]
+      summary: Get sync status
+      responses:
+        "200":
+          description: Sync status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncStatus"
+  /sync/trigger:
+    post:
+      operationId: triggerSync
+      tags: [sync]
+      summary: Manually trigger a sync
+      responses:
+        "200":
+          description: Sync triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /sync/logs:
+    get:
+      operationId: getSyncLogs
+      tags: [sync]
+      summary: Get recent sync logs
+      responses:
+        "200":
+          description: Recent sync logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SyncLog"
+  /confluence/folders:
+    get:
+      operationId: getConfluenceFolders
+      tags: [confluence]
+      summary: List top-level pages (folders) in the configured Confluence space
+      responses:
+        "200":
+          description: List of folders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConfluenceFolder"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +169,142 @@ components:
           type: string
       required:
         - status
-
+    Settings:
+      type: object
+      properties:
+        id:
+          type: integer
+        talkdeskAccountName:
+          type: string
+        talkdeskRegion:
+          type: string
+        confluenceSpaceKey:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - talkdeskAccountName
+        - talkdeskRegion
+        - confluenceSpaceKey
+    UpdateSettingsBody:
+      type: object
+      properties:
+        talkdeskAccountName:
+          type: string
+        talkdeskRegion:
+          type: string
+        confluenceSpaceKey:
+          type: string
+      required:
+        - talkdeskAccountName
+        - talkdeskRegion
+        - confluenceSpaceKey
+    FolderMapping:
+      type: object
+      properties:
+        id:
+          type: integer
+        confluenceFolderId:
+          type: string
+        confluenceFolderName:
+          type: string
+        knowledgeSegmentName:
+          type: string
+        externalSourceId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - confluenceFolderId
+        - confluenceFolderName
+        - knowledgeSegmentName
+    CreateFolderMappingBody:
+      type: object
+      properties:
+        confluenceFolderId:
+          type: string
+        confluenceFolderName:
+          type: string
+        knowledgeSegmentName:
+          type: string
+      required:
+        - confluenceFolderId
+        - confluenceFolderName
+        - knowledgeSegmentName
+    SyncStatus:
+      type: object
+      properties:
+        isRunning:
+          type: boolean
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRunStatus:
+          type: string
+          nullable: true
+        totalMappings:
+          type: integer
+        totalDocumentsTracked:
+          type: integer
+      required:
+        - isRunning
+        - totalMappings
+        - totalDocumentsTracked
+    SyncLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+        documentsProcessed:
+          type: integer
+        documentsSkipped:
+          type: integer
+        documentsErrored:
+          type: integer
+        errorMessage:
+          type: string
+          nullable: true
+      required:
+        - id
+        - startedAt
+        - status
+        - documentsProcessed
+        - documentsSkipped
+        - documentsErrored
+    ConfluenceFolder:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        hasChildren:
+          type: boolean
+      required:
+        - id
+        - title
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message

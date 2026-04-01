@@ -1,0 +1,238 @@
+import { createPrivateKey, createSign, randomUUID } from "crypto";
+import { logger } from "./logger";
+
+const TALKDESK_CLIENT_ID = process.env.TALKDESK_CLIENT_ID || "";
+const TALKDESK_PRIVATE_KEY = process.env.TALKDESK_PRIVATE_KEY || "";
+const TALKDESK_KEY_ID = process.env.TALKDESK_KEY_ID || "";
+
+const REGION_TOKEN_URLS: Record<string, string> = {
+  US: "https://{account}.talkdeskid.com/oauth/token",
+  EU: "https://{account}.talkdeskid.eu/oauth/token",
+  CA: "https://{account}.talkdeskidca.com/oauth/token",
+  AU: "https://{account}.talkdeskid.au/oauth/token",
+};
+
+const REGION_API_URLS: Record<string, string> = {
+  US: "https://api.talkdeskapp.com",
+  EU: "https://api.talkdeskapp.eu",
+  CA: "https://api.talkdeskappca.com",
+  AU: "https://api.talkdeskapp.au",
+};
+
+function base64UrlEncode(buffer: Buffer): string {
+  return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function createJwtAssertion(accountName: string, region: string): string {
+  const tokenUrl = REGION_TOKEN_URLS[region]?.replace("{account}", accountName);
+  if (!tokenUrl) throw new Error(`Unknown region: ${region}`);
+
+  const now = Math.floor(Date.now() / 1000);
+
+  const header = {
+    alg: "ES256",
+    typ: "JWT",
+    kid: TALKDESK_KEY_ID,
+  };
+
+  const payload = {
+    jti: randomUUID(),
+    iss: TALKDESK_CLIENT_ID,
+    sub: TALKDESK_CLIENT_ID,
+    aud: tokenUrl,
+    iat: now,
+    exp: now + 300,
+  };
+
+  const headerB64 = base64UrlEncode(Buffer.from(JSON.stringify(header)));
+  const payloadB64 = base64UrlEncode(Buffer.from(JSON.stringify(payload)));
+  const signingInput = `${headerB64}.${payloadB64}`;
+
+  const pemKey = `-----BEGIN PRIVATE KEY-----\n${TALKDESK_PRIVATE_KEY}\n-----END PRIVATE KEY-----`;
+  const privateKey = createPrivateKey(pemKey);
+
+  const sign = createSign("SHA256");
+  sign.update(signingInput);
+  const derSignature = sign.sign(privateKey);
+
+  const rLength = derSignature[3];
+  let r = derSignature.subarray(4, 4 + rLength);
+  let sOffset = 4 + rLength + 2;
+  const sLength = derSignature[sOffset - 1];
+  let s = derSignature.subarray(sOffset, sOffset + sLength);
+
+  if (r.length > 32) r = r.subarray(r.length - 32);
+  if (s.length > 32) s = s.subarray(s.length - 32);
+
+  const rawSig = Buffer.alloc(64);
+  r.copy(rawSig, 32 - r.length);
+  s.copy(rawSig, 64 - s.length);
+
+  const signatureB64 = base64UrlEncode(rawSig);
+  return `${signingInput}.${signatureB64}`;
+}
+
+let cachedToken: { token: string; expiresAt: number; accountName: string; region: string } | null = null;
+
+export async function getAccessToken(accountName: string, region: string): Promise<string> {
+  if (
+    cachedToken &&
+    cachedToken.accountName === accountName &&
+    cachedToken.region === region &&
+    Date.now() < cachedToken.expiresAt - 60_000
+  ) {
+    return cachedToken.token;
+  }
+
+  const tokenUrl = REGION_TOKEN_URLS[region]?.replace("{account}", accountName);
+  if (!tokenUrl) throw new Error(`Unknown region: ${region}`);
+
+  const assertion = createJwtAssertion(accountName, region);
+
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+    client_assertion: assertion,
+  });
+
+  const res = await fetch(tokenUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: body.toString(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    logger.error({ status: res.status, body: text }, "Talkdesk token error");
+    throw new Error(`Talkdesk token error: ${res.status} ${text}`);
+  }
+
+  const data = await res.json();
+  cachedToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
+    accountName,
+    region,
+  };
+
+  return data.access_token;
+}
+
+function getApiUrl(region: string): string {
+  return REGION_API_URLS[region] || REGION_API_URLS.US;
+}
+
+export async function createExternalSource(
+  accountName: string,
+  region: string,
+  name: string,
+): Promise<{ id: string }> {
+  const token = await getAccessToken(accountName, region);
+  const apiUrl = getApiUrl(region);
+
+  const res = await fetch(`${apiUrl}/agent-assist/external-source`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ name }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    logger.error({ status: res.status, body: text }, "Talkdesk create external source error");
+    throw new Error(`Talkdesk create external source error: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+export async function deleteExternalSource(
+  accountName: string,
+  region: string,
+  sourceId: string,
+): Promise<void> {
+  const token = await getAccessToken(accountName, region);
+  const apiUrl = getApiUrl(region);
+
+  const res = await fetch(`${apiUrl}/agent-assist/external-source/${sourceId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+  });
+
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text();
+    logger.error({ status: res.status, body: text }, "Talkdesk delete external source error");
+    throw new Error(`Talkdesk delete external source error: ${res.status} ${text}`);
+  }
+}
+
+export async function upsertDocument(
+  accountName: string,
+  region: string,
+  sourceId: string,
+  documentId: string,
+  title: string,
+  htmlContent: string,
+): Promise<void> {
+  const token = await getAccessToken(accountName, region);
+  const apiUrl = getApiUrl(region);
+
+  const res = await fetch(
+    `${apiUrl}/agent-assist/external-source/${sourceId}/document/${documentId}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        title,
+        body: htmlContent,
+        content_type: "text/html",
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    logger.error({ status: res.status, body: text, documentId }, "Talkdesk upsert document error");
+    throw new Error(`Talkdesk upsert document error: ${res.status} ${text}`);
+  }
+}
+
+export async function deleteDocument(
+  accountName: string,
+  region: string,
+  sourceId: string,
+  documentId: string,
+): Promise<void> {
+  const token = await getAccessToken(accountName, region);
+  const apiUrl = getApiUrl(region);
+
+  const res = await fetch(
+    `${apiUrl}/agent-assist/external-source/${sourceId}/document/${documentId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    },
+  );
+
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text();
+    logger.error({ status: res.status, body: text, documentId }, "Talkdesk delete document error");
+    throw new Error(`Talkdesk delete document error: ${res.status} ${text}`);
+  }
+}
