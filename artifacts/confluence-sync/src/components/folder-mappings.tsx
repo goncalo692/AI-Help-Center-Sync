@@ -92,7 +92,10 @@ export function FolderMappings() {
   const onSubmit = (data: MappingValues) => {
     // Find folder name from the id
     const folder = confluenceFolders?.find(f => f.id === data.confluenceFolderId);
-    if (!folder) return;
+    if (!folder) {
+      toast({ title: "Error", description: "Selected folder not found. Please refresh and try again.", variant: "destructive" });
+      return;
+    }
 
     createMapping.mutate(
       {

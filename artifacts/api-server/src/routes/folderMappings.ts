@@ -7,8 +7,9 @@ import {
   ListFolderMappingsResponse,
   DeleteFolderMappingResponse,
 } from "@workspace/api-zod";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { deleteExternalSource } from "../lib/talkdesk";
+import { getFolderDirectChildren } from "../lib/confluence";
 import { settingsTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
@@ -37,6 +38,32 @@ router.get("/folder-mappings", async (_req, res) => {
 router.post("/folder-mappings", async (req, res) => {
   try {
     const body = CreateFolderMappingBody.parse(req.body);
+
+    // Check for duplicate mapping
+    const existing = await db
+      .select()
+      .from(folderMappingsTable)
+      .where(
+        and(
+          eq(folderMappingsTable.confluenceFolderId, body.confluenceFolderId),
+          eq(folderMappingsTable.knowledgeSegmentName, body.knowledgeSegmentName),
+        ),
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      res.status(409).json({ message: "A mapping for this folder and segment already exists" });
+      return;
+    }
+
+    // Validate folder exists in Confluence
+    try {
+      await getFolderDirectChildren(body.confluenceFolderId);
+    } catch {
+      res.status(400).json({ message: "Confluence folder not found or inaccessible" });
+      return;
+    }
+
     const [mapping] = await db
       .insert(folderMappingsTable)
       .values({

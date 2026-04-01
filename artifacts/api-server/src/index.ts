@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { startSyncScheduler } from "./lib/syncJob";
+import { startSyncScheduler, runSync } from "./lib/syncJob";
 
 const rawPort = process.env["PORT"];
 
@@ -24,4 +24,7 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
   startSyncScheduler();
+  runSync().catch((err) => {
+    logger.error({ err }, "Initial sync error");
+  });
 });

@@ -36,12 +36,23 @@ router.get("/sync/status", async (_req, res) => {
   }
 });
 
+let lastTriggerAt = 0;
+const TRIGGER_COOLDOWN_MS = 30_000; // 30 seconds
+
 router.post("/sync/trigger", async (req, res) => {
   try {
     if (getIsSyncing()) {
       res.json(TriggerSyncResponse.parse({ message: "Sync is already in progress" }));
       return;
     }
+
+    const now = Date.now();
+    if (now - lastTriggerAt < TRIGGER_COOLDOWN_MS) {
+      const waitSecs = Math.ceil((TRIGGER_COOLDOWN_MS - (now - lastTriggerAt)) / 1000);
+      res.status(429).json({ message: `Please wait ${waitSecs}s before triggering again` });
+      return;
+    }
+    lastTriggerAt = now;
 
     runSync().catch((err) => {
       req.log.error({ err }, "Manual sync error");

@@ -69,7 +69,7 @@ export function ConnectionSettings() {
       initialized.current = true;
       form.reset({
         talkdeskAccountName: settings.talkdeskAccountName,
-        talkdeskRegion: settings.talkdeskRegion as any,
+        talkdeskRegion: (["US", "EU", "CA", "AU"].includes(settings.talkdeskRegion) ? settings.talkdeskRegion : "US") as SettingsValues["talkdeskRegion"],
         confluenceSpaceKey: settings.confluenceSpaceKey,
       });
     }

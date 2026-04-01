@@ -9,7 +9,11 @@ const router: IRouter = Router();
 router.get("/confluence/folders", async (req, res) => {
   try {
     const settings = await db.select().from(settingsTable).limit(1);
-    const spaceKey = settings.length > 0 ? settings[0].confluenceSpaceKey : "AHC";
+    if (settings.length === 0 || !settings[0].confluenceSpaceKey) {
+      res.status(400).json({ message: "Confluence space key not configured. Update settings first." });
+      return;
+    }
+    const spaceKey = settings[0].confluenceSpaceKey;
 
     const folders = await getFoldersInSpace(spaceKey);
 

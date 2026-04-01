@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { settingsTable, folderMappingsTable, syncStateTable, syncLogsTable } from "@workspace/db/schema";
 import { eq, and, notInArray, desc, lt } from "drizzle-orm";
 import {
-  getFolderDirectChildren,
+  getFolderChildrenRecursive,
   getPageContent,
   getPageVersion,
   getSmartLinkDetails,
@@ -15,6 +15,7 @@ import { logger } from "./logger";
 
 const CONCURRENCY = 5;
 const MAX_SYNC_LOGS = 200;
+const MAX_ERROR_MESSAGE_LENGTH = 4000;
 
 let isSyncing = false;
 
@@ -350,7 +351,7 @@ export async function runSync(): Promise<void> {
             .where(eq(folderMappingsTable.id, mapping.id));
         }
 
-        const children = await getFolderDirectChildren(mapping.confluenceFolderId);
+        const children = await getFolderChildrenRecursive(mapping.confluenceFolderId);
         const pages = children.filter((c) => c.type === "page");
         const embeds = children.filter((c) => c.type === "embed");
         const otherCount = children.length - pages.length - embeds.length;
@@ -392,7 +393,9 @@ export async function runSync(): Promise<void> {
       }
     }
 
-    const combinedErrors = counters.errors.length > 0 ? counters.errors.join("\n") : undefined;
+    const combinedErrors = counters.errors.length > 0
+      ? counters.errors.join("\n").slice(0, MAX_ERROR_MESSAGE_LENGTH)
+      : undefined;
 
     await db
       .update(syncLogsTable)
@@ -419,7 +422,7 @@ export async function runSync(): Promise<void> {
         documentsProcessed: counters.processed,
         documentsSkipped: counters.skipped,
         documentsErrored: counters.errored,
-        errorMessage: err instanceof Error ? err.message : String(err),
+        errorMessage: (err instanceof Error ? err.message : String(err)).slice(0, MAX_ERROR_MESSAGE_LENGTH),
       })
       .where(eq(syncLogsTable.id, logEntry.id));
   } finally {

@@ -183,6 +183,22 @@ export async function getFolderDirectChildren(folderId: string): Promise<FolderC
   return allChildren;
 }
 
+/**
+ * Recursively get all children from a folder and its subfolders.
+ * Returns pages and embeds from the entire folder tree.
+ */
+export async function getFolderChildrenRecursive(folderId: string): Promise<FolderChild[]> {
+  const directChildren = await getFolderDirectChildren(folderId);
+  const subfolders = directChildren.filter((c) => c.type === "folder");
+  const nonFolders = directChildren.filter((c) => c.type !== "folder");
+
+  const nestedResults = await Promise.all(
+    subfolders.map((sf) => getFolderChildrenRecursive(sf.id)),
+  );
+
+  return [...nonFolders, ...nestedResults.flat()];
+}
+
 export async function getSmartLinkDetails(embedId: string): Promise<ConfluenceSmartLink> {
   return confluenceV2Request(`/embeds/${embedId}`);
 }

@@ -413,6 +413,8 @@ function SafeHtmlPreview({ html }: { html: string }) {
         "blockquote", "pre", "code", "span", "div", "a",
       ],
       ALLOWED_ATTR: ["href", "title", "class", "id", "colspan", "rowspan", "scope", "align", "valign"],
+      ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+      ALLOW_DATA_ATTR: false,
     });
   }, [html]);
 
