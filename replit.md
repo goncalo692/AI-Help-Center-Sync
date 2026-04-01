@@ -2,7 +2,7 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+Confluence-to-Talkdesk Knowledge Management sync tool. Syncs Confluence wiki content to Talkdesk Knowledge Management API every 5 minutes. Includes a settings UI for configuring folder-to-knowledge-segment mappings.
 
 ## Stack
 
@@ -15,82 +15,82 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **Frontend**: React + Vite + Tailwind CSS + shadcn/ui
 
 ## Structure
 
 ```text
 artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
+├── artifacts/
+│   ├── api-server/         # Express API server with sync logic
+│   │   └── src/
+│   │       ├── lib/
+│   │       │   ├── confluence.ts  # Confluence REST API client
+│   │       │   ├── talkdesk.ts    # Talkdesk KM API client (JWT auth)
+│   │       │   ├── syncJob.ts     # Background sync job (5-min interval)
+│   │       │   └── logger.ts      # Pino logger
+│   │       └── routes/
+│   │           ├── settings.ts        # GET/PUT /api/settings
+│   │           ├── folderMappings.ts   # CRUD /api/folder-mappings
+│   │           ├── sync.ts            # /api/sync/status, /trigger, /logs
+│   │           ├── confluence.ts      # /api/confluence/folders
+│   │           └── health.ts          # /api/healthz
+│   └── confluence-sync/    # React + Vite frontend (settings UI)
+├── lib/
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
 │   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+│       └── src/schema/
+│           ├── settings.ts        # Talkdesk account config
+│           ├── folderMappings.ts  # Confluence folder → KM segment mappings
+│           ├── syncState.ts       # Document change tracking (hashes)
+│           └── syncLogs.ts        # Sync run history
+├── pnpm-workspace.yaml
+├── tsconfig.base.json
+├── tsconfig.json
+└── package.json
 ```
 
-## TypeScript & Composite Projects
+## Key Features
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+- **Confluence Integration**: Uses REST API v1 with Basic Auth (email + API token) to fetch space content
+- **Talkdesk Integration**: Uses JWT-based auth (ES256 signed assertions) to authenticate with Talkdesk OAuth, then manages external sources and documents via the Knowledge Management API
+- **Change Detection**: Stores content hashes and last-modified timestamps per document; only re-syncs when content actually changes
+- **Image Stripping**: Removes all `<img>` tags from HTML before sending to Talkdesk
+- **Background Sync**: Runs every 5 minutes via setInterval, with manual trigger option
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+## Environment Secrets
+
+- `CONFLUENCE_BASE_URL` — Confluence instance URL
+- `CONFLUENCE_EMAIL` — Confluence account email
+- `CONFLUENCE_API_TOKEN` — Confluence API token
+- `TALKDESK_CLIENT_ID` — Talkdesk OAuth client ID
+- `TALKDESK_PRIVATE_KEY` — Talkdesk ES256 private key (PEM body)
+- `TALKDESK_KEY_ID` — Talkdesk key identifier
+- `SESSION_SECRET` — Session secret
+- `DATABASE_URL` — PostgreSQL connection string (auto-provisioned)
+
+## Database Tables
+
+- `settings` — Single-row config: Talkdesk account name, region, Confluence space key
+- `folder_mappings` — Maps Confluence folder IDs to knowledge segment names, tracks external source IDs
+- `sync_state` — Per-document tracking: content hash, last modified, Talkdesk document ID
+- `sync_logs` — Sync run history with counts (processed/skipped/errored)
+
+## Talkdesk Auth Flow
+
+1. Create JWT assertion signed with ES256 private key
+2. POST to region-specific token URL with `client_credentials` grant
+3. Cache access token until near expiry
+4. Use token for KM API calls (external sources, document upsert/delete)
 
 ## Root Scripts
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
+- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages
 - `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API client hooks and Zod schemas
 
-## Packages
+## Integration Note
 
-### `artifacts/api-server` (`@workspace/api-server`)
-
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
-
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
-
-### `lib/db` (`@workspace/db`)
-
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
-
-### `lib/api-spec` (`@workspace/api-spec`)
-
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+Confluence integration uses manual API credentials (not Replit connector). Credentials stored as environment secrets.
