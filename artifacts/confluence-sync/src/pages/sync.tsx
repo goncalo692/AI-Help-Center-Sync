@@ -4,7 +4,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import DOMPurify from "dompurify";
 import {
   Activity, Play, CheckCircle2, XCircle, AlertCircle, Clock,
-  Database, FileText, ArrowLeft, Eye, ChevronRight, Link2,
+  Database, FileText, ArrowLeft, Eye, ChevronRight, Link2, ChevronDown, RefreshCw,
 } from "lucide-react";
 
 import {
@@ -35,6 +35,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 function StatusIcon({ status, hasErrors }: { status: string; hasErrors?: boolean }) {
   switch (status.toLowerCase()) {
@@ -76,6 +82,8 @@ function SyncOverview() {
 
   const triggerSync = useTriggerSync();
 
+  const [isForceSyncing, setIsForceSyncing] = useState(false);
+
   const handleTriggerSync = () => {
     triggerSync.mutate(undefined, {
       onSuccess: () => {
@@ -88,6 +96,23 @@ function SyncOverview() {
         toast({ title: "Error", description: "Failed to trigger synchronization.", variant: "destructive" });
       },
     });
+  };
+
+  const handleForceSync = async () => {
+    setIsForceSyncing(true);
+    try {
+      const base = import.meta.env.BASE_URL || "/";
+      const res = await fetch(`${base}api/sync/force`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "Force sync triggered", description: "All documents will be re-synced regardless of last sync time." });
+      queryClient.invalidateQueries({ queryKey: getGetSyncStatusQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetSyncLogsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getListSyncSourcesQueryKey() });
+    } catch {
+      toast({ title: "Error", description: "Failed to trigger force sync.", variant: "destructive" });
+    } finally {
+      setIsForceSyncing(false);
+    }
   };
 
   if (isStatusLoading) {
@@ -107,10 +132,25 @@ function SyncOverview() {
               {isRunning ? "Running" : "Idle"}
             </Badge>
           </div>
-          <Button size="sm" onClick={handleTriggerSync} disabled={isRunning || triggerSync.isPending}>
-            <Play className="w-4 h-4 mr-2" />
-            Sync Now
-          </Button>
+          <div className="flex items-center">
+            <Button size="sm" onClick={handleTriggerSync} disabled={isRunning || triggerSync.isPending || isForceSyncing} className="rounded-r-none">
+              <Play className="w-4 h-4 mr-2" />
+              Sync Now
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="default" className="rounded-l-none border-l border-l-primary-foreground/20 px-2" disabled={isRunning || triggerSync.isPending || isForceSyncing}>
+                  <ChevronDown className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleForceSync} disabled={isRunning || isForceSyncing}>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Force Sync All
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {(status?.lastRunStatus === "error" || status?.lastRunStatus === "failed" || (status?.lastRunErrored ?? 0) > 0) && (

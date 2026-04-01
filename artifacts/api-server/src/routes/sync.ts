@@ -65,6 +65,28 @@ router.post("/sync/trigger", async (req, res) => {
   }
 });
 
+router.post("/sync/force", async (req, res) => {
+  try {
+    if (getIsSyncing()) {
+      res.json({ message: "Sync is already in progress" });
+      return;
+    }
+
+    await db
+      .update(syncStateTable)
+      .set({ contentHash: "", confluenceLastModified: "" });
+
+    runSync().catch((err) => {
+      req.log.error({ err }, "Force sync error");
+    });
+
+    res.json({ message: "Force sync triggered — all documents will be re-synced" });
+  } catch (err) {
+    req.log.error({ err }, "Error triggering force sync");
+    res.status(500).json({ message: "Failed to trigger force sync" });
+  }
+});
+
 router.get("/sync/logs", async (_req, res) => {
   try {
     const logs = await db
