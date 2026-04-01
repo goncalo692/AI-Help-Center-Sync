@@ -214,9 +214,9 @@ function SyncLogs() {
 
   return (
     <Card className="flex flex-col min-h-0 h-full">
-      <CardHeader className="pb-3 border-b shrink-0">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Clock className="w-4 h-4 text-muted-foreground" />
+      <CardHeader className="py-4 px-6 border-b shrink-0">
+        <CardTitle className="text-base leading-normal flex items-center gap-2">
+          <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
           Recent Activity
         </CardTitle>
       </CardHeader>
@@ -298,9 +298,9 @@ function KnowledgeBases() {
 
   return (
     <Card className="flex flex-col min-h-0 h-full">
-      <CardHeader className="pb-3 border-b shrink-0">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Database className="w-4 h-4 text-muted-foreground" />
+      <CardHeader className="py-4 px-6 border-b shrink-0">
+        <CardTitle className="text-base leading-normal flex items-center gap-2">
+          <Database className="w-4 h-4 text-muted-foreground shrink-0" />
           Knowledge Bases
         </CardTitle>
       </CardHeader>
