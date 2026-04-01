@@ -95,6 +95,8 @@ export async function getAccessToken(accountName: string, region: string): Promi
     client_assertion: assertion,
   });
 
+  logger.info({ tokenUrl }, "Requesting Talkdesk access token");
+
   const res = await fetch(tokenUrl, {
     method: "POST",
     headers: {
@@ -106,7 +108,7 @@ export async function getAccessToken(accountName: string, region: string): Promi
 
   if (!res.ok) {
     const text = await res.text();
-    logger.error({ status: res.status, body: text }, "Talkdesk token error");
+    logger.error({ status: res.status, body: text, tokenUrl }, "Talkdesk token error");
     throw new Error(`Talkdesk token error: ${res.status} ${text}`);
   }
 
@@ -118,6 +120,7 @@ export async function getAccessToken(accountName: string, region: string): Promi
     region,
   };
 
+  logger.info("Talkdesk access token obtained successfully");
   return data.access_token;
 }
 
@@ -132,24 +135,36 @@ export async function createExternalSource(
 ): Promise<{ id: string }> {
   const token = await getAccessToken(accountName, region);
   const apiUrl = getApiUrl(region);
+  const url = `${apiUrl}/knowledge-management/external-sources`;
 
-  const res = await fetch(`${apiUrl}/agent-assist/external-source`, {
+  logger.info({ url, name }, "Creating Talkdesk external source");
+
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({
+      enabled: true,
+      details: {
+        name,
+        description: `Confluence sync: ${name}`,
+        knowledge_type: "CUSTOM",
+      },
+    }),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    logger.error({ status: res.status, body: text }, "Talkdesk create external source error");
+    logger.error({ status: res.status, body: text, url }, "Talkdesk create external source error");
     throw new Error(`Talkdesk create external source error: ${res.status} ${text}`);
   }
 
-  return res.json();
+  const data = await res.json();
+  logger.info({ sourceId: data.id }, "External source created successfully");
+  return data;
 }
 
 export async function deleteExternalSource(
@@ -160,7 +175,7 @@ export async function deleteExternalSource(
   const token = await getAccessToken(accountName, region);
   const apiUrl = getApiUrl(region);
 
-  const res = await fetch(`${apiUrl}/agent-assist/external-source/${sourceId}`, {
+  const res = await fetch(`${apiUrl}/knowledge-management/external-sources/${sourceId}`, {
     method: "DELETE",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -185,23 +200,25 @@ export async function upsertDocument(
 ): Promise<void> {
   const token = await getAccessToken(accountName, region);
   const apiUrl = getApiUrl(region);
+  const url = `${apiUrl}/knowledge-management/external-sources/${sourceId}/documents/${documentId}`;
 
-  const res = await fetch(
-    `${apiUrl}/agent-assist/external-source/${sourceId}/document/${documentId}`,
-    {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        title,
-        body: htmlContent,
-        content_type: "text/html",
-      }),
+  logger.info({ url, documentId, title }, "Upserting Talkdesk document");
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
     },
-  );
+    body: JSON.stringify({
+      url: `https://confluence.example.com/doc/${documentId}`,
+      title,
+      content: htmlContent,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }),
+  });
 
   if (!res.ok) {
     const text = await res.text();
@@ -220,7 +237,7 @@ export async function deleteDocument(
   const apiUrl = getApiUrl(region);
 
   const res = await fetch(
-    `${apiUrl}/agent-assist/external-source/${sourceId}/document/${documentId}`,
+    `${apiUrl}/knowledge-management/external-sources/${sourceId}/documents/${documentId}`,
     {
       method: "DELETE",
       headers: {

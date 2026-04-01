@@ -180,6 +180,7 @@ export async function runSync(): Promise<void> {
   let processed = 0;
   let skipped = 0;
   let errored = 0;
+  const errorMessages: string[] = [];
 
   try {
     const settings = await db.select().from(settingsTable).limit(1);
@@ -253,7 +254,9 @@ export async function runSync(): Promise<void> {
             if (result === "processed") processed++;
             else skipped++;
           } catch (pageErr) {
+            const msg = pageErr instanceof Error ? pageErr.message : String(pageErr);
             logger.error({ err: pageErr, pageId: child.id }, "Error processing page");
+            errorMessages.push(`Page ${child.id}: ${msg}`);
             errored++;
           }
         }
@@ -270,15 +273,21 @@ export async function runSync(): Promise<void> {
             if (result === "processed") processed++;
             else skipped++;
           } catch (embedErr) {
+            const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
             logger.error({ err: embedErr, embedId: child.id }, "Error processing smart link");
+            errorMessages.push(`Embed ${child.id}: ${msg}`);
             errored++;
           }
         }
       } catch (mappingErr) {
+        const msg = mappingErr instanceof Error ? mappingErr.message : String(mappingErr);
         logger.error({ err: mappingErr, mappingId: mapping.id }, "Error processing mapping");
+        errorMessages.push(`Mapping ${mapping.knowledgeSegmentName}: ${msg}`);
         errored++;
       }
     }
+
+    const combinedErrors = errorMessages.length > 0 ? errorMessages.join("\n") : undefined;
 
     await db
       .update(syncLogsTable)
@@ -288,6 +297,7 @@ export async function runSync(): Promise<void> {
         documentsProcessed: processed,
         documentsSkipped: skipped,
         documentsErrored: errored,
+        errorMessage: combinedErrors,
       })
       .where(eq(syncLogsTable.id, logEntry.id));
 
