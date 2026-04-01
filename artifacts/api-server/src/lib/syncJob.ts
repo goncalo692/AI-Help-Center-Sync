@@ -1,24 +1,25 @@
 import { db } from "@workspace/db";
 import { settingsTable, folderMappingsTable, syncStateTable, syncLogsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, notInArray, desc, lt } from "drizzle-orm";
 import {
   getFolderDirectChildren,
   getPageContent,
+  getPageVersion,
   getSmartLinkDetails,
+  buildPageUrl,
   stripImages,
   getContentHash,
 } from "./confluence";
-import { createExternalSource, upsertDocument } from "./talkdesk";
+import { createExternalSource, upsertDocument, deleteDocument } from "./talkdesk";
 import { logger } from "./logger";
+
+const CONCURRENCY = 5;
+const MAX_SYNC_LOGS = 200;
 
 let isSyncing = false;
 
 export function getIsSyncing(): boolean {
   return isSyncing;
-}
-
-function buildSmartLinkHtml(title: string, embedUrl: string): string {
-  return `<h2>${escapeHtml(title)}</h2><p><a href="${escapeHtml(embedUrl)}">${escapeHtml(embedUrl)}</a></p>`;
 }
 
 function escapeHtml(str: string): string {
@@ -29,70 +30,110 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function buildSmartLinkHtml(title: string, embedUrl: string): string {
+  return `<h2>${escapeHtml(title)}</h2><p><a href="${escapeHtml(embedUrl)}">${escapeHtml(embedUrl)}</a></p>`;
+}
+
+async function runInBatches<T>(
+  items: T[],
+  fn: (item: T) => Promise<void>,
+  concurrency: number,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    await Promise.allSettled(batch.map(fn));
+  }
+}
+
 async function syncPageItem(
   pageId: string,
   mappingId: number,
   sourceId: string,
   accountName: string,
   region: string,
-): Promise<"processed" | "skipped"> {
-  const existingState = await db
-    .select()
-    .from(syncStateTable)
-    .where(eq(syncStateTable.confluenceDocumentId, pageId))
-    .limit(1);
+  counters: { processed: number; skipped: number; errored: number; errors: string[] },
+): Promise<void> {
+  try {
+    // Lightweight v2 call: returns version + status + createdAt without body
+    const pageInfo = await getPageVersion(pageId);
 
-  const fullPage = await getPageContent(pageId);
-  const lastModified = fullPage.version?.when || "";
+    // Skip non-current pages (archived, trashed, draft)
+    if (pageInfo.status !== "current") {
+      logger.info({ pageId, status: pageInfo.status }, "Skipping non-current page");
+      counters.skipped++;
+      return;
+    }
 
-  if (
-    lastModified &&
-    existingState.length > 0 &&
-    existingState[0].confluenceLastModified === lastModified
-  ) {
-    return "skipped";
-  }
+    const lastModified = pageInfo.version?.createdAt || "";
 
-  const rawHtml = fullPage.body?.storage?.value || "";
-  const cleanHtml = stripImages(rawHtml);
-  const hash = getContentHash(cleanHtml);
+    const existingState = await db
+      .select()
+      .from(syncStateTable)
+      .where(eq(syncStateTable.confluenceDocumentId, pageId))
+      .limit(1);
 
-  if (existingState.length > 0 && existingState[0].contentHash === hash) {
-    await db
-      .update(syncStateTable)
-      .set({ confluenceLastModified: lastModified, lastSyncedAt: new Date() })
-      .where(eq(syncStateTable.id, existingState[0].id));
-    return "skipped";
-  }
+    if (
+      lastModified &&
+      existingState.length > 0 &&
+      existingState[0].confluenceLastModified === lastModified
+    ) {
+      counters.skipped++;
+      return;
+    }
 
-  const docId = `confluence-${pageId}`;
-  await upsertDocument(accountName, region, sourceId, docId, fullPage.title, cleanHtml);
+    // Full v2 call with body content
+    const fullPage = await getPageContent(pageId);
+    const rawHtml = fullPage.body?.storage?.value || "";
+    const cleanHtml = stripImages(rawHtml);
+    const hash = getContentHash(cleanHtml);
 
-  if (existingState.length > 0) {
-    await db
-      .update(syncStateTable)
-      .set({
+    if (existingState.length > 0 && existingState[0].contentHash === hash) {
+      await db
+        .update(syncStateTable)
+        .set({ confluenceLastModified: lastModified, lastSyncedAt: new Date() })
+        .where(eq(syncStateTable.id, existingState[0].id));
+      counters.skipped++;
+      return;
+    }
+
+    const isNew = existingState.length === 0;
+    const docId = `confluence-${pageId}`;
+    const sourceUrl = buildPageUrl(fullPage);
+    const createdAt = isNew ? (fullPage.createdAt || new Date().toISOString()) : undefined;
+
+    await upsertDocument(accountName, region, sourceId, docId, fullPage.title, cleanHtml, sourceUrl, isNew, createdAt);
+
+    if (!isNew) {
+      await db
+        .update(syncStateTable)
+        .set({
+          contentHash: hash,
+          confluenceLastModified: lastModified,
+          talkdeskDocumentId: docId,
+          documentTitle: fullPage.title,
+          cachedHtml: cleanHtml,
+          lastSyncedAt: new Date(),
+        })
+        .where(eq(syncStateTable.id, existingState[0].id));
+    } else {
+      await db.insert(syncStateTable).values({
+        confluenceDocumentId: pageId,
+        folderMappingId: mappingId,
         contentHash: hash,
         confluenceLastModified: lastModified,
         talkdeskDocumentId: docId,
         documentTitle: fullPage.title,
         cachedHtml: cleanHtml,
-        lastSyncedAt: new Date(),
-      })
-      .where(eq(syncStateTable.id, existingState[0].id));
-  } else {
-    await db.insert(syncStateTable).values({
-      confluenceDocumentId: pageId,
-      folderMappingId: mappingId,
-      contentHash: hash,
-      confluenceLastModified: lastModified,
-      talkdeskDocumentId: docId,
-      documentTitle: fullPage.title,
-      cachedHtml: cleanHtml,
-    });
-  }
+      });
+    }
 
-  return "processed";
+    counters.processed++;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err, pageId }, "Error processing page");
+    counters.errors.push(`Page ${pageId}: ${msg}`);
+    counters.errored++;
+  }
 }
 
 async function syncSmartLinkItem(
@@ -101,70 +142,146 @@ async function syncSmartLinkItem(
   sourceId: string,
   accountName: string,
   region: string,
-): Promise<"processed" | "skipped"> {
-  const embed = await getSmartLinkDetails(embedId);
+  counters: { processed: number; skipped: number; errored: number; errors: string[] },
+): Promise<void> {
+  try {
+    const embed = await getSmartLinkDetails(embedId);
 
-  if (!embed.embedUrl) {
-    logger.warn({ embedId }, "Smart link has no embedUrl, skipping");
-    return "skipped";
-  }
+    if (!embed.embedUrl) {
+      logger.warn({ embedId }, "Smart link has no embedUrl, skipping");
+      counters.skipped++;
+      return;
+    }
 
-  const lastModified = embed.version?.createdAt || "";
+    // Skip non-current embeds
+    if (embed.status !== "current") {
+      logger.info({ embedId, status: embed.status }, "Skipping non-current embed");
+      counters.skipped++;
+      return;
+    }
 
-  const existingState = await db
-    .select()
-    .from(syncStateTable)
-    .where(eq(syncStateTable.confluenceDocumentId, `embed-${embedId}`))
-    .limit(1);
+    const lastModified = embed.version?.createdAt || "";
+    const confluenceDocId = `embed-${embedId}`;
 
-  if (
-    lastModified &&
-    existingState.length > 0 &&
-    existingState[0].confluenceLastModified === lastModified
-  ) {
-    return "skipped";
-  }
+    const existingState = await db
+      .select()
+      .from(syncStateTable)
+      .where(eq(syncStateTable.confluenceDocumentId, confluenceDocId))
+      .limit(1);
 
-  const html = buildSmartLinkHtml(embed.title || embed.embedUrl, embed.embedUrl);
-  const hash = getContentHash(html);
+    if (
+      lastModified &&
+      existingState.length > 0 &&
+      existingState[0].confluenceLastModified === lastModified
+    ) {
+      counters.skipped++;
+      return;
+    }
 
-  if (existingState.length > 0 && existingState[0].contentHash === hash) {
-    await db
-      .update(syncStateTable)
-      .set({ confluenceLastModified: lastModified, lastSyncedAt: new Date() })
-      .where(eq(syncStateTable.id, existingState[0].id));
-    return "skipped";
-  }
+    const html = buildSmartLinkHtml(embed.title || embed.embedUrl, embed.embedUrl);
+    const hash = getContentHash(html);
 
-  const docId = `confluence-embed-${embedId}`;
-  const title = embed.title || `Smart Link: ${embed.embedUrl}`;
-  await upsertDocument(accountName, region, sourceId, docId, title, html);
+    if (existingState.length > 0 && existingState[0].contentHash === hash) {
+      await db
+        .update(syncStateTable)
+        .set({ confluenceLastModified: lastModified, lastSyncedAt: new Date() })
+        .where(eq(syncStateTable.id, existingState[0].id));
+      counters.skipped++;
+      return;
+    }
 
-  if (existingState.length > 0) {
-    await db
-      .update(syncStateTable)
-      .set({
+    const isNew = existingState.length === 0;
+    const docId = `confluence-embed-${embedId}`;
+    const title = embed.title || `Smart Link: ${embed.embedUrl}`;
+    await upsertDocument(accountName, region, sourceId, docId, title, html, embed.embedUrl, isNew);
+
+    if (!isNew) {
+      await db
+        .update(syncStateTable)
+        .set({
+          contentHash: hash,
+          confluenceLastModified: lastModified,
+          talkdeskDocumentId: docId,
+          documentTitle: title,
+          cachedHtml: html,
+          lastSyncedAt: new Date(),
+        })
+        .where(eq(syncStateTable.id, existingState[0].id));
+    } else {
+      await db.insert(syncStateTable).values({
+        confluenceDocumentId: confluenceDocId,
+        folderMappingId: mappingId,
         contentHash: hash,
         confluenceLastModified: lastModified,
         talkdeskDocumentId: docId,
         documentTitle: title,
         cachedHtml: html,
-        lastSyncedAt: new Date(),
-      })
-      .where(eq(syncStateTable.id, existingState[0].id));
-  } else {
-    await db.insert(syncStateTable).values({
-      confluenceDocumentId: `embed-${embedId}`,
-      folderMappingId: mappingId,
-      contentHash: hash,
-      confluenceLastModified: lastModified,
-      talkdeskDocumentId: docId,
-      documentTitle: title,
-      cachedHtml: html,
-    });
-  }
+      });
+    }
 
-  return "processed";
+    counters.processed++;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err, embedId }, "Error processing smart link");
+    counters.errors.push(`Embed ${embedId}: ${msg}`);
+    counters.errored++;
+  }
+}
+
+async function removeOrphanedDocuments(
+  mappingId: number,
+  sourceId: string,
+  accountName: string,
+  region: string,
+  currentDocIds: string[],
+  counters: { processed: number; errored: number; errors: string[] },
+): Promise<void> {
+  if (currentDocIds.length === 0) return;
+
+  const orphaned = await db
+    .select()
+    .from(syncStateTable)
+    .where(
+      and(
+        eq(syncStateTable.folderMappingId, mappingId),
+        notInArray(syncStateTable.confluenceDocumentId, currentDocIds),
+      ),
+    );
+
+  for (const doc of orphaned) {
+    try {
+      if (doc.talkdeskDocumentId) {
+        await deleteDocument(accountName, region, sourceId, doc.talkdeskDocumentId);
+      }
+      await db.delete(syncStateTable).where(eq(syncStateTable.id, doc.id));
+      logger.info({ docId: doc.confluenceDocumentId, title: doc.documentTitle }, "Removed orphaned document");
+      counters.processed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err, docId: doc.confluenceDocumentId }, "Error removing orphaned document");
+      counters.errors.push(`Orphan ${doc.confluenceDocumentId}: ${msg}`);
+      counters.errored++;
+    }
+  }
+}
+
+async function pruneSyncLogs(): Promise<void> {
+  try {
+    const cutoff = await db
+      .select({ id: syncLogsTable.id })
+      .from(syncLogsTable)
+      .orderBy(desc(syncLogsTable.startedAt))
+      .limit(1)
+      .offset(MAX_SYNC_LOGS);
+
+    if (cutoff.length > 0) {
+      await db
+        .delete(syncLogsTable)
+        .where(lt(syncLogsTable.id, cutoff[0].id));
+    }
+  } catch (err) {
+    logger.warn({ err }, "Failed to prune sync logs");
+  }
 }
 
 export async function runSync(): Promise<void> {
@@ -177,10 +294,7 @@ export async function runSync(): Promise<void> {
 
   const [logEntry] = await db.insert(syncLogsTable).values({}).returning();
 
-  let processed = 0;
-  let skipped = 0;
-  let errored = 0;
-  const errorMessages: string[] = [];
+  const counters = { processed: 0, skipped: 0, errored: 0, errors: [] as string[] };
 
   try {
     const settings = await db.select().from(settingsTable).limit(1);
@@ -190,7 +304,6 @@ export async function runSync(): Promise<void> {
         .update(syncLogsTable)
         .set({ status: "skipped", completedAt: new Date(), errorMessage: "No settings configured" })
         .where(eq(syncLogsTable.id, logEntry.id));
-      isSyncing = false;
       return;
     }
 
@@ -201,7 +314,6 @@ export async function runSync(): Promise<void> {
         .update(syncLogsTable)
         .set({ status: "skipped", completedAt: new Date(), errorMessage: "Talkdesk account name not set" })
         .where(eq(syncLogsTable.id, logEntry.id));
-      isSyncing = false;
       return;
     }
 
@@ -212,7 +324,6 @@ export async function runSync(): Promise<void> {
         .update(syncLogsTable)
         .set({ status: "completed", completedAt: new Date(), errorMessage: "No folder mappings" })
         .where(eq(syncLogsTable.id, logEntry.id));
-      isSyncing = false;
       return;
     }
 
@@ -225,6 +336,7 @@ export async function runSync(): Promise<void> {
             config.talkdeskAccountName,
             config.talkdeskRegion,
             mapping.knowledgeSegmentName,
+            mapping.knowledgeSegmentName, // knowledge_segments
           );
           sourceId = source.id;
           await db
@@ -242,66 +354,56 @@ export async function runSync(): Promise<void> {
           "Found folder children",
         );
 
-        for (const child of pages) {
-          try {
-            const result = await syncPageItem(
-              child.id,
-              mapping.id,
-              sourceId,
-              config.talkdeskAccountName,
-              config.talkdeskRegion,
-            );
-            if (result === "processed") processed++;
-            else skipped++;
-          } catch (pageErr) {
-            const msg = pageErr instanceof Error ? pageErr.message : String(pageErr);
-            logger.error({ err: pageErr, pageId: child.id }, "Error processing page");
-            errorMessages.push(`Page ${child.id}: ${msg}`);
-            errored++;
-          }
-        }
+        await runInBatches(
+          pages,
+          (child) => syncPageItem(child.id, mapping.id, sourceId!, config.talkdeskAccountName, config.talkdeskRegion, counters),
+          CONCURRENCY,
+        );
 
-        for (const child of embeds) {
-          try {
-            const result = await syncSmartLinkItem(
-              child.id,
-              mapping.id,
-              sourceId,
-              config.talkdeskAccountName,
-              config.talkdeskRegion,
-            );
-            if (result === "processed") processed++;
-            else skipped++;
-          } catch (embedErr) {
-            const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
-            logger.error({ err: embedErr, embedId: child.id }, "Error processing smart link");
-            errorMessages.push(`Embed ${child.id}: ${msg}`);
-            errored++;
-          }
-        }
+        await runInBatches(
+          embeds,
+          (child) => syncSmartLinkItem(child.id, mapping.id, sourceId!, config.talkdeskAccountName, config.talkdeskRegion, counters),
+          CONCURRENCY,
+        );
+
+        // Remove documents that no longer exist in Confluence
+        const currentDocIds = [
+          ...pages.map((p) => p.id),
+          ...embeds.map((e) => `embed-${e.id}`),
+        ];
+        await removeOrphanedDocuments(
+          mapping.id,
+          sourceId!,
+          config.talkdeskAccountName,
+          config.talkdeskRegion,
+          currentDocIds,
+          counters,
+        );
       } catch (mappingErr) {
         const msg = mappingErr instanceof Error ? mappingErr.message : String(mappingErr);
         logger.error({ err: mappingErr, mappingId: mapping.id }, "Error processing mapping");
-        errorMessages.push(`Mapping ${mapping.knowledgeSegmentName}: ${msg}`);
-        errored++;
+        counters.errors.push(`Mapping ${mapping.knowledgeSegmentName}: ${msg}`);
+        counters.errored++;
       }
     }
 
-    const combinedErrors = errorMessages.length > 0 ? errorMessages.join("\n") : undefined;
+    const combinedErrors = counters.errors.length > 0 ? counters.errors.join("\n") : undefined;
 
     await db
       .update(syncLogsTable)
       .set({
         status: "completed",
         completedAt: new Date(),
-        documentsProcessed: processed,
-        documentsSkipped: skipped,
-        documentsErrored: errored,
+        documentsProcessed: counters.processed,
+        documentsSkipped: counters.skipped,
+        documentsErrored: counters.errored,
         errorMessage: combinedErrors,
       })
       .where(eq(syncLogsTable.id, logEntry.id));
 
-    logger.info({ processed, skipped, errored }, "Sync completed");
+    logger.info({ processed: counters.processed, skipped: counters.skipped, errored: counters.errored }, "Sync completed");
+
+    await pruneSyncLogs();
   } catch (err) {
     logger.error({ err }, "Sync failed");
     await db
@@ -309,9 +411,9 @@ export async function runSync(): Promise<void> {
       .set({
         status: "error",
         completedAt: new Date(),
-        documentsProcessed: processed,
-        documentsSkipped: skipped,
-        documentsErrored: errored,
+        documentsProcessed: counters.processed,
+        documentsSkipped: counters.skipped,
+        documentsErrored: counters.errored,
         errorMessage: err instanceof Error ? err.message : String(err),
       })
       .where(eq(syncLogsTable.id, logEntry.id));

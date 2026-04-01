@@ -8,14 +8,18 @@ const router: IRouter = Router();
 
 router.get("/settings", async (_req, res) => {
   try {
-    let settings = await db.select().from(settingsTable).limit(1);
+    const settings = await db.select().from(settingsTable).limit(1);
 
     if (settings.length === 0) {
-      const [created] = await db
-        .insert(settingsTable)
-        .values({})
-        .returning();
-      settings = [created];
+      const response = GetSettingsResponse.parse({
+        id: 0,
+        talkdeskAccountName: "",
+        talkdeskRegion: "US",
+        confluenceSpaceKey: "",
+        updatedAt: null,
+      });
+      res.json(response);
+      return;
     }
 
     const s = settings[0];

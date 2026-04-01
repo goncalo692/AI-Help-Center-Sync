@@ -9,7 +9,7 @@ import {
   ListSourceDocumentsResponse,
   GetDocumentPreviewResponse,
 } from "@workspace/api-zod";
-import { desc, eq, sql, max } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { runSync, getIsSyncing } from "../lib/syncJob";
 
 const router: IRouter = Router();
@@ -84,26 +84,29 @@ router.get("/sync/logs", async (_req, res) => {
 router.get("/sync/sources", async (req, res) => {
   try {
     const mappings = await db.select().from(folderMappingsTable);
-    const sources = [];
 
-    for (const m of mappings) {
-      const docs = await db
-        .select({
-          count: sql<number>`count(*)`,
-          lastSynced: max(syncStateTable.lastSyncedAt),
-        })
-        .from(syncStateTable)
-        .where(eq(syncStateTable.folderMappingId, m.id));
+    const stats = await db
+      .select({
+        folderMappingId: syncStateTable.folderMappingId,
+        count: sql<number>`count(*)`,
+        lastSynced: sql<string>`max(${syncStateTable.lastSyncedAt})`,
+      })
+      .from(syncStateTable)
+      .groupBy(syncStateTable.folderMappingId);
 
-      sources.push({
+    const statsMap = new Map(stats.map((s) => [s.folderMappingId, s]));
+
+    const sources = mappings.map((m) => {
+      const s = statsMap.get(m.id);
+      return {
         mappingId: m.id,
         confluenceFolderName: m.confluenceFolderName,
         knowledgeSegmentName: m.knowledgeSegmentName,
         externalSourceId: m.externalSourceId || null,
-        documentCount: Number(docs[0]?.count || 0),
-        lastSyncedAt: docs[0]?.lastSynced?.toISOString() || null,
-      });
-    }
+        documentCount: Number(s?.count || 0),
+        lastSyncedAt: s?.lastSynced || null,
+      };
+    });
 
     res.json(ListSyncSourcesResponse.parse(sources));
   } catch (err) {

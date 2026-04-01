@@ -125,13 +125,35 @@ export async function getAccessToken(accountName: string, region: string): Promi
 }
 
 function getApiUrl(region: string): string {
-  return REGION_API_URLS[region] || REGION_API_URLS.US;
+  const url = REGION_API_URLS[region];
+  if (!url) throw new Error(`Unknown region: ${region}`);
+  return url;
+}
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries = 2,
+): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(url, options);
+    if (res.ok || (res.status < 500 && res.status !== 429)) return res;
+    if (attempt < retries) {
+      const delay = 1000 * Math.pow(2, attempt);
+      logger.warn({ status: res.status, attempt, url }, `Retrying after ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+    } else {
+      return res;
+    }
+  }
+  throw new Error("Unreachable");
 }
 
 export async function createExternalSource(
   accountName: string,
   region: string,
   name: string,
+  knowledgeSegments?: string,
 ): Promise<{ id: string }> {
   const token = await getAccessToken(accountName, region);
   const apiUrl = getApiUrl(region);
@@ -139,21 +161,23 @@ export async function createExternalSource(
 
   logger.info({ url, name }, "Creating Talkdesk external source");
 
-  const res = await fetch(url, {
+  const details: Record<string, string> = {
+    name,
+    description: `Confluence sync: ${name}`,
+    knowledge_type: "CUSTOM",
+  };
+  if (knowledgeSegments) {
+    details.knowledge_segments = knowledgeSegments;
+  }
+
+  const res = await fetchWithRetry(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({
-      enabled: true,
-      details: {
-        name,
-        description: `Confluence sync: ${name}`,
-        knowledge_type: "CUSTOM",
-      },
-    }),
+    body: JSON.stringify({ details }),
   });
 
   if (!res.ok) {
@@ -175,7 +199,7 @@ export async function deleteExternalSource(
   const token = await getAccessToken(accountName, region);
   const apiUrl = getApiUrl(region);
 
-  const res = await fetch(`${apiUrl}/knowledge-management/external-sources/${sourceId}`, {
+  const res = await fetchWithRetry(`${apiUrl}/knowledge-management/external-sources/${sourceId}`, {
     method: "DELETE",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -197,6 +221,9 @@ export async function upsertDocument(
   documentId: string,
   title: string,
   htmlContent: string,
+  sourceUrl: string,
+  isNew: boolean,
+  createdAt?: string,
 ): Promise<void> {
   const token = await getAccessToken(accountName, region);
   const apiUrl = getApiUrl(region);
@@ -204,20 +231,25 @@ export async function upsertDocument(
 
   logger.info({ url, documentId, title }, "Upserting Talkdesk document");
 
-  const res = await fetch(url, {
+  const now = new Date().toISOString();
+  const payload: Record<string, string> = {
+    url: sourceUrl,
+    title,
+    content: htmlContent,
+    updated_at: now,
+  };
+  if (isNew) {
+    payload.created_at = createdAt || now;
+  }
+
+  const res = await fetchWithRetry(url, {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({
-      url: `https://confluence.example.com/doc/${documentId}`,
-      title,
-      content: htmlContent,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -236,7 +268,7 @@ export async function deleteDocument(
   const token = await getAccessToken(accountName, region);
   const apiUrl = getApiUrl(region);
 
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `${apiUrl}/knowledge-management/external-sources/${sourceId}/documents/${documentId}`,
     {
       method: "DELETE",
