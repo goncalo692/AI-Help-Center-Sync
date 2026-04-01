@@ -239,10 +239,8 @@ export async function upsertDocument(
     title,
     content: htmlContent,
     updated_at: now,
+    created_at: createdAt || now,
   };
-  if (isNew) {
-    payload.created_at = createdAt || now;
-  }
 
   const res = await fetchWithRetry(url, {
     method: "PUT",
