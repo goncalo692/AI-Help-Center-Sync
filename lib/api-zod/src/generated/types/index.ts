@@ -8,10 +8,13 @@
 
 export * from "./confluenceFolder";
 export * from "./createFolderMappingBody";
+export * from "./documentPreview";
 export * from "./folderMapping";
 export * from "./healthStatus";
 export * from "./messageResponse";
 export * from "./settings";
+export * from "./syncedDocument";
 export * from "./syncLog";
+export * from "./syncSource";
 export * from "./syncStatus";
 export * from "./updateSettingsBody";

@@ -52,12 +52,18 @@ artifacts-monorepo/
 └── package.json
 ```
 
+## Frontend Pages
+
+- **Settings** (`/`) — Connection settings form (Talkdesk account, region, Confluence space key) + folder mappings table (add/delete Confluence folder to knowledge segment mappings)
+- **Sync** (`/sync`) — Sync engine status with manual trigger, knowledge bases list (click to drill into documents), document HTML preview dialog, recent sync activity log
+
 ## Key Features
 
-- **Confluence Integration**: Uses REST API v1 with Basic Auth (email + API token) to fetch space content
+- **Confluence Integration**: Uses REST API v1/v2 with Basic Auth (email + API token) to fetch space folders and page content
 - **Talkdesk Integration**: Uses JWT-based auth (ES256 signed assertions) to authenticate with Talkdesk OAuth, then manages external sources and documents via the Knowledge Management API
 - **Change Detection**: Stores content hashes and last-modified timestamps per document; only re-syncs when content actually changes
 - **Image Stripping**: Removes all `<img>` tags from HTML before sending to Talkdesk
+- **HTML Preview**: Cached HTML stored in sync_state; rendered with DOMPurify sanitization (allowlist-based)
 - **Background Sync**: Runs every 5 minutes via setInterval, with manual trigger option
 
 ## Environment Secrets
@@ -75,7 +81,7 @@ artifacts-monorepo/
 
 - `settings` — Single-row config: Talkdesk account name, region, Confluence space key
 - `folder_mappings` — Maps Confluence folder IDs to knowledge segment names, tracks external source IDs
-- `sync_state` — Per-document tracking: content hash, last modified, Talkdesk document ID
+- `sync_state` — Per-document tracking: content hash, last modified, Talkdesk document ID, document title, cached HTML
 - `sync_logs` — Sync run history with counts (processed/skipped/errored)
 
 ## Talkdesk Auth Flow

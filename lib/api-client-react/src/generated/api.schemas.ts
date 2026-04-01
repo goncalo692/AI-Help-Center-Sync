@@ -58,6 +58,32 @@ export interface SyncLog {
   errorMessage?: string | null;
 }
 
+export interface SyncSource {
+  mappingId: number;
+  confluenceFolderName: string;
+  knowledgeSegmentName: string;
+  externalSourceId?: string | null;
+  documentCount: number;
+  lastSyncedAt?: string | null;
+}
+
+export interface SyncedDocument {
+  id: number;
+  confluenceDocumentId: string;
+  documentTitle?: string | null;
+  talkdeskDocumentId?: string | null;
+  contentHash: string;
+  lastSyncedAt?: string | null;
+}
+
+export interface DocumentPreview {
+  id: number;
+  documentTitle?: string | null;
+  html: string;
+  confluenceDocumentId: string;
+  lastSyncedAt?: string | null;
+}
+
 export interface ConfluenceFolder {
   id: string;
   title: string;

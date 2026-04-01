@@ -8,6 +8,8 @@ export const syncStateTable = pgTable("sync_state", {
   contentHash: text("content_hash").notNull(),
   confluenceLastModified: text("confluence_last_modified"),
   talkdeskDocumentId: text("talkdesk_document_id"),
+  documentTitle: text("document_title"),
+  cachedHtml: text("cached_html"),
   lastSyncedAt: timestamp("last_synced_at").defaultNow(),
 });
 
