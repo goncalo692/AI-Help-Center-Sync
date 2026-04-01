@@ -467,7 +467,7 @@ function DocumentPreviewDialog({ documentId, onClose }: { documentId: number; on
 export default function SyncPage() {
   return (
     <SidebarLayout>
-      <div className="max-w-5xl w-full px-8 py-8 space-y-6 pb-24">
+      <div className="w-full space-y-6 pb-12">
         <SyncOverview />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
