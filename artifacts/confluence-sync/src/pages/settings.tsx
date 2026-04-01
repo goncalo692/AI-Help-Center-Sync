@@ -7,7 +7,7 @@ import { SidebarLayout } from "@/components/sidebar-layout";
 export default function Settings() {
   return (
     <SidebarLayout>
-      <div className="max-w-5xl w-full px-8 py-8 space-y-8 pb-24">
+      <div className="w-full space-y-8 pb-12">
         <section className="space-y-4">
           <div className="flex flex-col space-y-1">
             <h2 className="text-xl font-semibold flex items-center gap-2">
