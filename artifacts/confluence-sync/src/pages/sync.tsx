@@ -4,7 +4,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import DOMPurify from "dompurify";
 import {
   Activity, Play, CheckCircle2, XCircle, AlertCircle, Clock,
-  Database, FileText, ArrowLeft, Eye, ChevronRight, Link2, ChevronDown, RefreshCw,
+  Database, FileText, ArrowLeft, Eye, ChevronRight, Link2, ChevronDown, RefreshCw, RotateCcw,
 } from "lucide-react";
 
 import {
@@ -115,6 +115,23 @@ function SyncOverview() {
     }
   };
 
+  const handleResetSources = async () => {
+    setIsForceSyncing(true);
+    try {
+      const base = import.meta.env.BASE_URL || "/";
+      const res = await fetch(`${base}api/sync/reset-sources`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "Knowledge bases reset", description: "New knowledge bases will be created and all documents re-synced." });
+      queryClient.invalidateQueries({ queryKey: getGetSyncStatusQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetSyncLogsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getListSyncSourcesQueryKey() });
+    } catch {
+      toast({ title: "Error", description: "Failed to reset knowledge bases.", variant: "destructive" });
+    } finally {
+      setIsForceSyncing(false);
+    }
+  };
+
   if (isStatusLoading) {
     return <Skeleton className="h-32 w-full" />;
   }
@@ -147,6 +164,10 @@ function SyncOverview() {
                 <DropdownMenuItem onClick={handleForceSync} disabled={isRunning || isForceSyncing}>
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Force Sync All
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleResetSources} disabled={isRunning || isForceSyncing} className="text-destructive focus:text-destructive">
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Reset Knowledge Bases
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

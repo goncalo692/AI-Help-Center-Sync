@@ -87,6 +87,32 @@ router.post("/sync/force", async (req, res) => {
   }
 });
 
+router.post("/sync/reset-sources", async (req, res) => {
+  try {
+    if (getIsSyncing()) {
+      res.status(409).json({ message: "Cannot reset while sync is in progress" });
+      return;
+    }
+
+    await db
+      .update(folderMappingsTable)
+      .set({ externalSourceId: null, updatedAt: new Date() });
+
+    await db.delete(syncStateTable);
+
+    req.log.info("Knowledge base sources reset — new ones will be created on next sync");
+
+    runSync().catch((err) => {
+      req.log.error({ err }, "Post-reset sync error");
+    });
+
+    res.json({ message: "Knowledge bases reset. New sources will be created and all documents re-synced." });
+  } catch (err) {
+    req.log.error({ err }, "Error resetting sources");
+    res.status(500).json({ message: "Failed to reset knowledge bases" });
+  }
+});
+
 router.get("/sync/logs", async (_req, res) => {
   try {
     const logs = await db
