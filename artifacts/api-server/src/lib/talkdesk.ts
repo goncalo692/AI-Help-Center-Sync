@@ -178,10 +178,11 @@ export async function createExternalSource(
 
   const truncatedName = name.slice(0, 64);
   const description = `Confluence sync: ${name}`.slice(0, 160);
-  const details: Record<string, string> = {
+  const details: Record<string, unknown> = {
     name: truncatedName,
     description,
     knowledge_type: "CUSTOM",
+    enabled: true,
   };
   if (knowledgeSegments) {
     details.knowledge_segments = knowledgeSegments;
