@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { Server, Save } from "lucide-react";
+import { Save, Info } from "lucide-react";
 
 import {
   useGetSettings,
@@ -32,11 +32,14 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Slider } from "@/components/ui/slider";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const settingsSchema = z.object({
   talkdeskAccountName: z.string().min(1, "Account name is required"),
   talkdeskRegion: z.enum(["US", "EU", "CA", "AU"]),
   confluenceSpaceKey: z.string().min(1, "Space key is required"),
+  syncIntervalMinutes: z.number().min(1).max(60),
 });
 
 type SettingsValues = z.infer<typeof settingsSchema>;
@@ -59,6 +62,7 @@ export function ConnectionSettings() {
       talkdeskAccountName: "",
       talkdeskRegion: "US",
       confluenceSpaceKey: "AHC",
+      syncIntervalMinutes: 5,
     },
   });
 
@@ -71,6 +75,7 @@ export function ConnectionSettings() {
         talkdeskAccountName: settings.talkdeskAccountName,
         talkdeskRegion: (["US", "EU", "CA", "AU"].includes(settings.talkdeskRegion) ? settings.talkdeskRegion : "US") as SettingsValues["talkdeskRegion"],
         confluenceSpaceKey: settings.confluenceSpaceKey,
+        syncIntervalMinutes: settings.syncIntervalMinutes ?? 5,
       });
     }
   }, [settings, form]);
@@ -183,6 +188,45 @@ export function ConnectionSettings() {
                     </FormControl>
                     <FormDescription>
                       The key of the Confluence space to sync from.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="syncIntervalMinutes"
+                render={({ field }) => (
+                  <FormItem className="md:col-span-2">
+                    <div className="flex items-center gap-2">
+                      <FormLabel>Sync Interval</FormLabel>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-4 h-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs">
+                          <p>How often the sync engine checks Confluence for changes and pushes updates to Talkdesk. Lower values mean fresher knowledge but more API calls.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <FormControl>
+                      <div className="flex items-center gap-4">
+                        <Slider
+                          min={1}
+                          max={60}
+                          step={1}
+                          value={[field.value]}
+                          onValueChange={([v]) => field.onChange(v)}
+                          className="flex-1"
+                        />
+                        <span className="text-sm font-medium tabular-nums w-20 text-right">
+                          {field.value} {field.value === 1 ? "minute" : "minutes"}
+                        </span>
+                      </div>
+                    </FormControl>
+                    <FormDescription>
+                      Min 1 minute, max 60 minutes. Default is 5 minutes.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

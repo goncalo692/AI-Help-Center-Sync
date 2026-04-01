@@ -22,6 +22,7 @@ export const GetSettingsResponse = zod.object({
   talkdeskAccountName: zod.string(),
   talkdeskRegion: zod.string(),
   confluenceSpaceKey: zod.string(),
+  syncIntervalMinutes: zod.number().min(1).max(60),
   updatedAt: zod.coerce.date().optional(),
 });
 
@@ -32,6 +33,7 @@ export const UpdateSettingsBody = zod.object({
   talkdeskAccountName: zod.string(),
   talkdeskRegion: zod.string(),
   confluenceSpaceKey: zod.string(),
+  syncIntervalMinutes: zod.number().min(1).max(60),
 });
 
 export const UpdateSettingsResponse = zod.object({
@@ -39,6 +41,7 @@ export const UpdateSettingsResponse = zod.object({
   talkdeskAccountName: zod.string(),
   talkdeskRegion: zod.string(),
   confluenceSpaceKey: zod.string(),
+  syncIntervalMinutes: zod.number().min(1).max(60),
   updatedAt: zod.coerce.date().optional(),
 });
 

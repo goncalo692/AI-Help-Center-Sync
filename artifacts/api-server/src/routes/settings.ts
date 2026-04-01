@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { UpdateSettingsBody, GetSettingsResponse, UpdateSettingsResponse } from "@workspace/api-zod";
 import { eq } from "drizzle-orm";
+import { restartSyncScheduler } from "../lib/syncJob";
 
 const router: IRouter = Router();
 
@@ -16,6 +17,7 @@ router.get("/settings", async (_req, res) => {
         talkdeskAccountName: "",
         talkdeskRegion: "US",
         confluenceSpaceKey: "",
+        syncIntervalMinutes: 5,
         updatedAt: null,
       });
       res.json(response);
@@ -28,6 +30,7 @@ router.get("/settings", async (_req, res) => {
       talkdeskAccountName: s.talkdeskAccountName,
       talkdeskRegion: s.talkdeskRegion,
       confluenceSpaceKey: s.confluenceSpaceKey,
+      syncIntervalMinutes: s.syncIntervalMinutes,
       updatedAt: s.updatedAt?.toISOString(),
     });
     res.json(response);
@@ -43,6 +46,8 @@ router.put("/settings", async (req, res) => {
 
     let settings = await db.select().from(settingsTable).limit(1);
 
+    const intervalMinutes = Math.max(1, Math.min(60, body.syncIntervalMinutes));
+
     if (settings.length === 0) {
       const [created] = await db
         .insert(settingsTable)
@@ -50,6 +55,7 @@ router.put("/settings", async (req, res) => {
           talkdeskAccountName: body.talkdeskAccountName,
           talkdeskRegion: body.talkdeskRegion,
           confluenceSpaceKey: body.confluenceSpaceKey,
+          syncIntervalMinutes: intervalMinutes,
           updatedAt: new Date(),
         })
         .returning();
@@ -61,6 +67,7 @@ router.put("/settings", async (req, res) => {
           talkdeskAccountName: body.talkdeskAccountName,
           talkdeskRegion: body.talkdeskRegion,
           confluenceSpaceKey: body.confluenceSpaceKey,
+          syncIntervalMinutes: intervalMinutes,
           updatedAt: new Date(),
         })
         .where(eq(settingsTable.id, settings[0].id))
@@ -68,12 +75,16 @@ router.put("/settings", async (req, res) => {
       settings = [updated];
     }
 
+    // Restart scheduler with new interval
+    restartSyncScheduler(intervalMinutes);
+
     const s = settings[0];
     const response = UpdateSettingsResponse.parse({
       id: s.id,
       talkdeskAccountName: s.talkdeskAccountName,
       talkdeskRegion: s.talkdeskRegion,
       confluenceSpaceKey: s.confluenceSpaceKey,
+      syncIntervalMinutes: s.syncIntervalMinutes,
       updatedAt: s.updatedAt?.toISOString(),
     });
     res.json(response);

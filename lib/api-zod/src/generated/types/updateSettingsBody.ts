@@ -10,4 +10,5 @@ export interface UpdateSettingsBody {
   talkdeskAccountName: string;
   talkdeskRegion: string;
   confluenceSpaceKey: string;
+  syncIntervalMinutes: number;
 }

@@ -23,8 +23,9 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  startSyncScheduler();
-  runSync().catch((err) => {
-    logger.error({ err }, "Initial sync error");
+  startSyncScheduler().then(() => {
+    runSync().catch((err) => {
+      logger.error({ err }, "Initial sync error");
+    });
   });
 });

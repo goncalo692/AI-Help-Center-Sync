@@ -14,6 +14,7 @@ export interface Settings {
   talkdeskAccountName: string;
   talkdeskRegion: string;
   confluenceSpaceKey: string;
+  syncIntervalMinutes: number;
   updatedAt?: string;
 }
 
@@ -21,6 +22,7 @@ export interface UpdateSettingsBody {
   talkdeskAccountName: string;
   talkdeskRegion: string;
   confluenceSpaceKey: string;
+  syncIntervalMinutes: number;
 }
 
 export interface FolderMapping {

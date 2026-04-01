@@ -232,6 +232,10 @@ components:
           type: string
         confluenceSpaceKey:
           type: string
+        syncIntervalMinutes:
+          type: integer
+          minimum: 1
+          maximum: 60
         updatedAt:
           type: string
           format: date-time
@@ -240,6 +244,7 @@ components:
         - talkdeskAccountName
         - talkdeskRegion
         - confluenceSpaceKey
+        - syncIntervalMinutes
     UpdateSettingsBody:
       type: object
       properties:
@@ -249,10 +254,15 @@ components:
           type: string
         confluenceSpaceKey:
           type: string
+        syncIntervalMinutes:
+          type: integer
+          minimum: 1
+          maximum: 60
       required:
         - talkdeskAccountName
         - talkdeskRegion
         - confluenceSpaceKey
+        - syncIntervalMinutes
     FolderMapping:
       type: object
       properties:

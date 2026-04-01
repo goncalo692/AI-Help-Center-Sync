@@ -431,16 +431,27 @@ export async function runSync(): Promise<void> {
 }
 
 let syncInterval: ReturnType<typeof setInterval> | null = null;
+let currentIntervalMinutes = 5;
 
-export function startSyncScheduler(): void {
+export async function startSyncScheduler(): Promise<void> {
   if (syncInterval) return;
 
-  logger.info("Starting sync scheduler (every 5 minutes)");
+  // Read configured interval from DB
+  try {
+    const settings = await db.select().from(settingsTable).limit(1);
+    if (settings.length > 0 && settings[0].syncIntervalMinutes) {
+      currentIntervalMinutes = settings[0].syncIntervalMinutes;
+    }
+  } catch {
+    // Use default if DB not ready yet
+  }
+
+  logger.info({ intervalMinutes: currentIntervalMinutes }, "Starting sync scheduler");
   syncInterval = setInterval(() => {
     runSync().catch((err) => {
       logger.error({ err }, "Scheduled sync error");
     });
-  }, 5 * 60 * 1000);
+  }, currentIntervalMinutes * 60 * 1000);
 }
 
 export function stopSyncScheduler(): void {
@@ -448,4 +459,15 @@ export function stopSyncScheduler(): void {
     clearInterval(syncInterval);
     syncInterval = null;
   }
+}
+
+export function restartSyncScheduler(intervalMinutes: number): void {
+  stopSyncScheduler();
+  currentIntervalMinutes = intervalMinutes;
+  logger.info({ intervalMinutes }, "Restarting sync scheduler with new interval");
+  syncInterval = setInterval(() => {
+    runSync().catch((err) => {
+      logger.error({ err }, "Scheduled sync error");
+    });
+  }, intervalMinutes * 60 * 1000);
 }
