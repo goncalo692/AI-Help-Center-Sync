@@ -67,7 +67,7 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="lg:pl-56 min-h-screen flex flex-col">
+      <div className="lg:pl-56 h-screen flex flex-col">
         <header className="h-14 border-b bg-card flex items-center px-4 lg:hidden sticky top-0 z-20">
           <button
             className="p-1.5 rounded-md hover:bg-muted mr-3"
@@ -81,7 +81,7 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
           <span className="text-sm font-semibold">Talkdesk Knowledge Sync</span>
         </header>
 
-        <main className="flex-1 p-6 lg:p-8">
+        <main className="flex-1 p-6 lg:p-8 min-h-0 flex flex-col">
           {children}
         </main>
       </div>

@@ -213,15 +213,15 @@ function SyncLogs() {
   });
 
   return (
-    <Card>
-      <CardHeader className="pb-3 border-b">
+    <Card className="flex flex-col min-h-0 h-full">
+      <CardHeader className="pb-3 border-b shrink-0">
         <CardTitle className="text-base flex items-center gap-2">
           <Clock className="w-4 h-4 text-muted-foreground" />
           Recent Activity
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0">
-        <ScrollArea className="h-[280px]">
+      <CardContent className="p-0 flex-1 min-h-0">
+        <ScrollArea className="h-full">
           {isLoading ? (
             <div className="p-4 space-y-2">
               <Skeleton className="h-12 w-full" />
@@ -297,14 +297,14 @@ function KnowledgeBases() {
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3 border-b">
+    <Card className="flex flex-col min-h-0 h-full">
+      <CardHeader className="pb-3 border-b shrink-0">
         <CardTitle className="text-base flex items-center gap-2">
           <Database className="w-4 h-4 text-muted-foreground" />
           Knowledge Bases
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="p-0 flex-1 min-h-0 overflow-auto">
         {isLoading ? (
           <div className="p-4 space-y-3">
             <Skeleton className="h-16 w-full" />
@@ -509,10 +509,10 @@ function DocumentPreviewDialog({ documentId, onClose }: { documentId: number; on
 export default function SyncPage() {
   return (
     <SidebarLayout>
-      <div className="w-full space-y-6 pb-12">
+      <div className="w-full flex flex-col gap-6 pb-12 h-full min-h-0">
         <SyncOverview />
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
           <KnowledgeBases />
           <SyncLogs />
         </div>
