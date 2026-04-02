@@ -179,7 +179,7 @@ export async function createExternalSource(
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({ details }),
+    body: JSON.stringify({ enabled: true, details }),
   });
 
   if (!res.ok) {
